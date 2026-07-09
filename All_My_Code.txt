@@ -72,6 +72,41 @@ public class CorsConfig implements WebMvcConfigurer {
     }
 } 
  
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\config\SwaggerConfig.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/config/SwaggerConfig.java
+package com.swt301.ecommerce.config;
+
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class SwaggerConfig {
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+        final String securitySchemeName = "bearerAuth";
+        return new OpenAPI()
+                .info(new Info()
+                        .title("Online Ordering API")
+                        .version("1.0")
+                        .description("Tài liệu API cho dự án E-commerce"))
+                // Cấu hình nút Authorize trên Swagger UI
+                .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
+                .components(new Components()
+                        .addSecuritySchemes(securitySchemeName,
+                                new SecurityScheme()
+                                        .name(securitySchemeName)
+                                        .type(SecurityScheme.Type.HTTP)
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")));
+    }
+} 
+ 
 ===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\AddressController.java ===== 
 // Vị trí: src/main/java/com/swt301/ecommerce/controller/AddressController.java
 package com.swt301.ecommerce.controller;
@@ -276,7 +311,7 @@ public class OrderController {
     // private final com.teamproject.ecommerceapi.service.FileUploadService fileUploadService;
 
     // 3. FE-15: Tải ảnh bill QR
-    @PostMapping("/{orderId}/payment/qr")
+    @PostMapping(value = "/{orderId}/payment/qr", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadQrPayment(
             @PathVariable("orderId") Integer orderId,
             @AuthenticationPrincipal UserDetailsImpl currentUser,
@@ -330,13 +365,14 @@ public class ProductController {
 
     private final ProductService productService;
 
-    @PostMapping
-    public ResponseEntity<?> createProduct(@Valid @RequestBody ProductRequest request) {
+    @PostMapping(consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> createProduct(@Valid @ModelAttribute ProductRequest request) {
         return ResponseEntity.ok(productService.createProduct(request));
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<?> updateProduct(@PathVariable Integer id, @Valid @RequestBody ProductRequest request) {
+    // Sửa API Cập nhật sản phẩm
+    @PutMapping(value = "/{id}", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> updateProduct(@PathVariable Integer id, @Valid @ModelAttribute ProductRequest request) {
         return ResponseEntity.ok(productService.updateProduct(id, request));
     }
 
@@ -532,7 +568,7 @@ public class ProductRequest {
     @Min(value = 0, message = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")
     private Integer stock;
 
-    private String image;
+    private org.springframework.web.multipart.MultipartFile imageFile;
 } 
  
 ===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\RegisterRequest.java ===== 
@@ -1024,6 +1060,8 @@ public class OrderItem {
 
     @Column(name = "unit_price", nullable = false)
     private BigDecimal unitPrice; 
+    @Column(name = "subtotal", nullable = false)
+    private BigDecimal subtotal;
 } 
  
 ===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\OrderStatus.java ===== 
@@ -1162,6 +1200,9 @@ public class Product {
 
     @Column(name = "image")
     private String image;
+    @Column(name = "status")
+    @Builder.Default
+    private String status = "ACTIVE";
 } 
  
 ===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Role.java ===== 
@@ -1765,13 +1806,23 @@ public class SecurityConfig {
     }
 
     // Trích đoạn trong file SecurityConfig.java
+    // Trích đoạn trong SecurityConfig.java
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
             .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/api/products/**").permitAll() // ĐÃ THÊM /api/products/** VÀO ĐÂY
+                .requestMatchers(
+                    "/api/auth/**", 
+                    "/api/products/**",
+                    
+                    // --- MỞ KHÓA HOÀN TOÀN CHO SWAGGER ---
+                    "/v3/api-docs",         // Mở khóa file cấu trúc gốc
+                    "/v3/api-docs/**",      // Mở khóa các file cấu trúc phụ
+                    "/swagger-ui/**",       // Mở khóa giao diện HTML/CSS
+                    "/swagger-ui.html"      // Mở khóa đường dẫn trang chủ
+                ).permitAll() 
                 .anyRequest().authenticated()
             );
 
@@ -1917,7 +1968,8 @@ package com.swt301.ecommerce.service;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface FileUploadService {
-    String uploadImage(MultipartFile file);
+    String uploadImage(MultipartFile file); // Dùng cho ảnh QR
+    String uploadProductImage(MultipartFile file); // Dùng cho ảnh Sản phẩm
 } 
  
 ===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\OrderService.java ===== 
@@ -2186,6 +2238,8 @@ public class CartServiceImpl implements CartService {
         Optional<CartItem> existingItem = cartItemRepository.findByCart_CartIdAndProduct_ProductId(
                 cart.getCartId(), product.getProductId());
 
+        // Trích đoạn file: src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
+
         if (existingItem.isPresent()) {
             // Đã có trong giỏ -> Cộng dồn
             CartItem item = existingItem.get();
@@ -2200,9 +2254,14 @@ public class CartServiceImpl implements CartService {
                     .unitPrice(product.getPrice()) 
                     .build();
             cartItemRepository.save(newItem);
+            
+            // 👉 THÊM DÒNG NÀY: Đồng bộ vào bộ nhớ RAM của Hibernate
+            cart.getCartItems().add(newItem); 
         }
 
-        return mapToCartResponse(getOrCreateCart(userId));
+        return mapToCartResponse(cart); // Không cần gọi lại getOrCreateCart() nữa cho nhẹ máy
+
+        
     }
 
     @Override
@@ -2220,7 +2279,7 @@ public class CartServiceImpl implements CartService {
         item.setQuantity(request.getQuantity());
         cartItemRepository.save(item);
 
-        return mapToCartResponse(getOrCreateCart(userId));
+        return mapToCartResponse(cart);
     }
 
     @Override
@@ -2233,8 +2292,13 @@ public class CartServiceImpl implements CartService {
             throw new RuntimeException("Bạn không có quyền xóa sản phẩm này");
         }
 
+        Cart cart = item.getCart(); // Lấy giỏ hàng hiện tại
         cartItemRepository.delete(item);
-        return mapToCartResponse(getOrCreateCart(userId));
+        
+        // 👉 THÊM DÒNG NÀY: Xóa khỏi RAM để kết quả trả về không bị dính cục cũ
+        cart.getCartItems().remove(item);
+
+        return mapToCartResponse(cart);
     }
 
     // --- INTERNAL METHODS ---
@@ -2310,6 +2374,21 @@ public class FileUploadServiceImpl implements FileUploadService {
             return uploadResult.get("secure_url").toString();
         } catch (IOException e) {
             throw new RuntimeException("Lỗi khi tải ảnh lên server: " + e.getMessage());
+        }
+    }
+    @Override
+    public String uploadProductImage(MultipartFile file) {
+        try {
+            // Đặt tên file bắt đầu bằng PROD_
+            String publicId = "PROD_" + UUID.randomUUID().toString();
+            
+            // Upload vào thư mục "ecommerce_products"
+            Map uploadResult = cloudinary.uploader().upload(file.getBytes(),
+                    ObjectUtils.asMap("public_id", publicId, "folder", "ecommerce_products"));
+            
+            return uploadResult.get("secure_url").toString();
+        } catch (IOException e) {
+            throw new RuntimeException("Lỗi khi tải ảnh sản phẩm: " + e.getMessage());
         }
     }
 } 
@@ -2461,9 +2540,13 @@ public class OrderServiceImpl implements OrderService {
             product.setStock(product.getStock() - cartItem.getQuantity());
             productRepository.save(product);
 
+            BigDecimal itemSubtotal = cartItem.getUnitPrice().multiply(new BigDecimal(cartItem.getQuantity()));
+
             OrderItem orderItem = OrderItem.builder()
                     .order(order).product(product)
-                    .quantity(cartItem.getQuantity()).unitPrice(cartItem.getUnitPrice())
+                    .quantity(cartItem.getQuantity())
+                    .unitPrice(cartItem.getUnitPrice())
+                    .subtotal(itemSubtotal) // THÊM DÒNG NÀY
                     .build();
             orderItemRepository.save(orderItem);
         }
@@ -2481,7 +2564,8 @@ public class OrderServiceImpl implements OrderService {
         paymentRepository.save(payment);
 
         // 6. Dọn dẹp giỏ hàng
-        cartItemRepository.deleteAll(cart.getCartItems());
+        cartItemRepository.deleteAll(cart.getCartItems()); // Xóa trong DB
+        cart.getCartItems().clear();
 
         // 7. Trả kết quả
         String fullAddress = address.getStreet() + ", " + address.getWard() + ", " + address.getDistrict() + ", " + address.getProvince();
@@ -2638,6 +2722,7 @@ import com.swt301.ecommerce.entity.Category;
 import com.swt301.ecommerce.entity.Product;
 import com.swt301.ecommerce.repository.CategoryRepository;
 import com.swt301.ecommerce.repository.ProductRepository;
+import com.swt301.ecommerce.service.FileUploadService;
 import com.swt301.ecommerce.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -2651,6 +2736,7 @@ public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final FileUploadService fileUploadService;
 
     @Override
     public List<ProductResponse> getAllProducts() {
@@ -2671,13 +2757,19 @@ public class ProductServiceImpl implements ProductService {
         Category category = categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy danh mục"));
 
+        // Gọi hàm up ảnh lên Cloudinary
+        String imageUrl = null;
+        if (request.getImageFile() != null && !request.getImageFile().isEmpty()) {
+            imageUrl = fileUploadService.uploadProductImage(request.getImageFile());
+        }
+
         Product product = Product.builder()
                 .category(category)
                 .productName(request.getProductName())
                 .description(request.getDescription())
                 .price(request.getPrice())
                 .stock(request.getStock())
-                .image(request.getImage())
+                .image(imageUrl) // LƯU LINK ẢNH CLOUDINARY
                 .build();
 
         return mapToResponse(productRepository.save(product));
@@ -2691,16 +2783,20 @@ public class ProductServiceImpl implements ProductService {
         Category category = categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy danh mục"));
 
+        // Nếu admin có chọn file ảnh mới thì up lên, không thì giữ nguyên ảnh cũ
+        if (request.getImageFile() != null && !request.getImageFile().isEmpty()) {
+            String imageUrl = fileUploadService.uploadProductImage(request.getImageFile());
+            product.setImage(imageUrl);
+        }
+
         product.setCategory(category);
         product.setProductName(request.getProductName());
         product.setDescription(request.getDescription());
         product.setPrice(request.getPrice());
         product.setStock(request.getStock());
-        product.setImage(request.getImage());
 
         return mapToResponse(productRepository.save(product));
     }
-
     @Override
     public void deleteProduct(Integer id) {
         Product product = productRepository.findById(id)
@@ -2781,21 +2877,20 @@ server:
 
 ecommerce:
   app:
-    jwtSecret: NGVwYjN6YzhxMnB4OXU1aWp2bThkaWZrNnBoMmduOHltdmwycTM4ajYxazA # ${JWT_SECRET}
+    jwtSecret: # ${JWT_SECRET}
     jwtExpirationMs: 86400000
-    googleClientId: 351530225339-5iq6pdi3mdt1fjje0krodp07e18jmi19.apps.googleusercontent.com # ${GOOGLE_CLIENT_ID}
 
 cloudinary:
-  cloud-name: dt1stlhqc # ${CLOUDINARY_CLOUD_NAME}
-  api-key: 912788441748564 # ${CLOUDINARY_API_KEY}
-  api-secret: dmTXCWvYWMKHZgsQPvirbywk8Ps # ${CLOUDINARY_API_SECRET}
+  cloud-name: # ${CLOUDINARY_CLOUD_NAME}
+  api-key: # ${CLOUDINARY_API_KEY}
+  api-secret: # ${CLOUDINARY_API_SECRET}
 
 spring:
   datasource:
     # Đường link kết nối trực tiếp đến máy chủ Supabase
-    url: jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?user=postgres.lxzgocsjecrvkcubkmmd&password=Haibara1808%23
-    username: postgres.lxzgocsjecrvkcubkmmd
-    password: Haibara1808%23
+    url: # ${SPRING_DATASOURCE_URL}
+    username: # ${SPRING_DATASOURCE_USERNAME}
+    password: # ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
     hikari:
@@ -2814,23 +2909,13 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         '[format_sql]': true
 
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: lehoangem06092006 # ${MAIL_USERNAME}
-    password: qpjn foac zvqn goma # ${MAIL_PASSWORD}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
 
-  # Cấu hình giới hạn dung lượng file upload (Cho tính năng Upload trang truyện Manga)
+
+  # Cấu hình giới hạn dung lượng file upload 
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 50MB 
+      max-file-size: 5MB
+      max-request-size: 10MB 
  
 ===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\test\java\com\swt301\ecommerce\EcommerceApplicationTests.java ===== 
 package com.swt301.ecommerce;
