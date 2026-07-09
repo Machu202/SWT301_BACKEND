@@ -1,0 +1,2848 @@
+ 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\EcommerceApplication.java ===== 
+package com.swt301.ecommerce;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class EcommerceApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(EcommerceApplication.class, args);
+	}
+
+}
+ 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\config\CloudinaryConfig.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/config/CloudinaryConfig.java
+package com.swt301.ecommerce.config;
+
+import com.cloudinary.Cloudinary;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Configuration
+public class CloudinaryConfig {
+
+    @Value("${cloudinary.cloud-name}")
+    private String cloudName;
+
+    @Value("${cloudinary.api-key}")
+    private String apiKey;
+
+    @Value("${cloudinary.api-secret}")
+    private String apiSecret;
+
+    @Bean
+    public Cloudinary cloudinary() {
+        Map<String, String> config = new HashMap<>();
+        config.put("cloud_name", cloudName);
+        config.put("api_key", apiKey);
+        config.put("api_secret", apiSecret);
+        return new Cloudinary(config);
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\config\CorsConfig.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/config/CorsConfig.java
+package com.swt301.ecommerce.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@Configuration
+public class CorsConfig implements WebMvcConfigurer {
+    
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+                .allowedOrigins("*") // Lưu ý: Khi deploy thực tế, nên thay "*" bằng domain của Frontend (vd: http://localhost:3000)
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(false)
+                .maxAge(3600);
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\AddressController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/AddressController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.dto.request.AddressRequest;
+import com.swt301.ecommerce.security.UserDetailsImpl;
+import com.swt301.ecommerce.service.AddressService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/addresses")
+@RequiredArgsConstructor
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('CUSTOMER')")
+public class AddressController {
+
+    private final AddressService addressService;
+
+    @GetMapping
+    public ResponseEntity<?> getMyAddresses(@AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(addressService.getUserAddresses(currentUser.getId()));
+    }
+
+    @PostMapping
+    public ResponseEntity<?> createAddress(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @Valid @RequestBody AddressRequest request) {
+        return ResponseEntity.ok(addressService.createAddress(currentUser.getId(), request));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateAddress(
+            @PathVariable("id") Integer addressId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @Valid @RequestBody AddressRequest request) {
+        return ResponseEntity.ok(addressService.updateAddress(addressId, currentUser.getId(), request));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\AdminOrderController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/AdminOrderController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.service.OrderService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/admin/orders")
+@PreAuthorize("hasRole('ADMIN')")
+@RequiredArgsConstructor
+public class AdminOrderController {
+
+    private final OrderService orderService;
+
+    // 1. Xem tất cả đơn hàng
+    @GetMapping
+    public ResponseEntity<?> getAllOrders() {
+        return ResponseEntity.ok(orderService.getAllSystemOrders());
+    }
+
+    // 2. Cập nhật trạng thái đơn hàng (Truyền ID trạng thái mới xuống)
+    @PutMapping("/{id}/status")
+    public ResponseEntity<?> updateOrderStatus(
+            @PathVariable("id") Integer orderId,
+            @RequestParam("statusId") Integer statusId) {
+        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, statusId));
+    }
+
+    // 3. Cập nhật trạng thái thanh toán (Duyệt biên lai QR)
+    @PutMapping("/{id}/payment")
+    public ResponseEntity<?> verifyPayment(
+            @PathVariable("id") Integer orderId,
+            @RequestParam("paymentStatus") String paymentStatus) {
+        return ResponseEntity.ok(orderService.verifyPayment(orderId, paymentStatus));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\AuthController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/AuthController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.dto.request.*;
+import com.swt301.ecommerce.dto.response.*;
+import com.swt301.ecommerce.service.AuthService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@CrossOrigin(origins = "*", maxAge = 3600)
+@RestController
+@RequestMapping("/api/auth")
+@RequiredArgsConstructor
+public class AuthController {
+    private final AuthService authService;
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+        return ResponseEntity.ok(authService.register(request));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\CartController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/CartController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.dto.request.CartItemRequest;
+import com.swt301.ecommerce.security.UserDetailsImpl;
+import com.swt301.ecommerce.service.CartService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/carts")
+@RequiredArgsConstructor
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('CUSTOMER')")
+public class CartController {
+
+    private final CartService cartService;
+
+    @GetMapping
+    public ResponseEntity<?> getMyCart(@AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(cartService.getCart(currentUser.getId()));
+    }
+
+    @PostMapping("/items")
+    public ResponseEntity<?> addToCart(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @Valid @RequestBody CartItemRequest request) {
+        return ResponseEntity.ok(cartService.addToCart(currentUser.getId(), request));
+    }
+
+    @PutMapping("/items")
+    public ResponseEntity<?> updateCartItem(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @Valid @RequestBody CartItemRequest request) {
+        return ResponseEntity.ok(cartService.updateCartItem(currentUser.getId(), request));
+    }
+
+    @DeleteMapping("/items/{cartItemId}")
+    public ResponseEntity<?> removeCartItem(
+            @PathVariable("cartItemId") Integer cartItemId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(cartService.removeCartItem(currentUser.getId(), cartItemId));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\OrderController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/OrderController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.dto.response.OrderSummaryResponse;
+
+import com.swt301.ecommerce.security.UserDetailsImpl;
+import com.swt301.ecommerce.service.OrderService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/orders")
+@RequiredArgsConstructor
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('CUSTOMER')")
+public class OrderController {
+
+    private final OrderService orderService;
+    private final com.swt301.ecommerce.service.FileUploadService fileUploadService;
+
+    // FE-11: Xem trước hóa đơn tính tiền
+    @GetMapping("/preview")
+    public ResponseEntity<OrderSummaryResponse> previewOrder(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @RequestParam(value = "voucherCode", required = false) String voucherCode) {
+        
+        OrderSummaryResponse response = orderService.previewOrder(currentUser.getId(), voucherCode);
+        return ResponseEntity.ok(response);
+    }
+    // FE-13 & FE-17: Chốt đơn hàng
+    @PostMapping("/checkout")
+    public ResponseEntity<com.swt301.ecommerce.dto.response.OrderResponse> createOrder(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @jakarta.validation.Valid @RequestBody com.swt301.ecommerce.dto.request.CheckoutRequest request) {
+        
+        return ResponseEntity.ok(orderService.createOrder(currentUser.getId(), request));
+    }
+    // NHỚ THÊM DEPENDENCY NÀY VÀO ĐẦU CONTROLLER:
+    // private final com.teamproject.ecommerceapi.service.FileUploadService fileUploadService;
+
+    // 3. FE-15: Tải ảnh bill QR
+    @PostMapping("/{orderId}/payment/qr")
+    public ResponseEntity<?> uploadQrPayment(
+            @PathVariable("orderId") Integer orderId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+
+        // Validate File
+        if (file.isEmpty()) throw new RuntimeException("Vui lòng chọn file ảnh");
+        if (file.getSize() > 5 * 1024 * 1024) throw new RuntimeException("Kích thước ảnh không được vượt quá 5MB");
+        
+        String contentType = file.getContentType();
+        if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
+            throw new RuntimeException("Chỉ chấp nhận file định dạng JPG hoặc PNG");
+        }
+
+        // Upload và lưu DB
+        String imageUrl = fileUploadService.uploadImage(file);
+        orderService.updatePaymentQrImage(orderId, currentUser.getId(), imageUrl);
+
+        return ResponseEntity.ok(java.util.Map.of(
+                "message", "Tải ảnh hóa đơn thành công",
+                "qrUrl", imageUrl
+        ));
+    }
+
+    // 4. FE-19: Xem lịch sử đơn hàng
+    @GetMapping
+    public ResponseEntity<java.util.List<com.swt301.ecommerce.dto.response.OrderResponse>> getMyOrders(
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        
+        return ResponseEntity.ok(orderService.getUserOrders(currentUser.getId()));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\ProductController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/ProductController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.dto.request.ProductRequest;
+import com.swt301.ecommerce.service.ProductService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/admin/products")
+@PreAuthorize("hasRole('ADMIN')") 
+@RequiredArgsConstructor
+public class ProductController {
+
+    private final ProductService productService;
+
+    @PostMapping
+    public ResponseEntity<?> createProduct(@Valid @RequestBody ProductRequest request) {
+        return ResponseEntity.ok(productService.createProduct(request));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateProduct(@PathVariable Integer id, @Valid @RequestBody ProductRequest request) {
+        return ResponseEntity.ok(productService.updateProduct(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteProduct(@PathVariable Integer id) {
+        productService.deleteProduct(id);
+        return ResponseEntity.ok(java.util.Map.of("message", "Đã xóa sản phẩm thành công"));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\PublicProductController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/PublicProductController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.service.ProductService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/products")
+@RequiredArgsConstructor
+public class PublicProductController {
+
+    private final ProductService productService;
+
+    @GetMapping
+    public ResponseEntity<?> getAllProducts() {
+        return ResponseEntity.ok(productService.getAllProducts());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getProductById(@PathVariable Integer id) {
+        return ResponseEntity.ok(productService.getProductById(id));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\controller\VoucherController.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/controller/VoucherController.java
+package com.swt301.ecommerce.controller;
+
+import com.swt301.ecommerce.service.VoucherService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+
+@RestController
+@RequestMapping("/api/vouchers")
+@RequiredArgsConstructor
+@PreAuthorize("hasRole('CUSTOMER')")
+public class VoucherController {
+
+    private final VoucherService voucherService;
+
+    @GetMapping("/check")
+    public ResponseEntity<?> checkVoucher(
+            @RequestParam("code") String code,
+            @RequestParam("orderSubtotal") BigDecimal orderSubtotal) {
+        return ResponseEntity.ok(voucherService.checkVoucher(code, orderSubtotal));
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\AddressRequest.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/request/AddressRequest.java
+package com.swt301.ecommerce.dto.request;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class AddressRequest {
+
+    @NotBlank(message = "Tên người nhận không được để trống")
+    private String receiverName;
+
+    @NotBlank(message = "Số điện thoại không được để trống")
+    @Pattern(regexp = "^(0|84)(3|5|7|8|9)[0-9]{8}$", message = "Số điện thoại không đúng định dạng VN")
+    private String receiverPhone;
+
+    @NotBlank(message = "Tỉnh/Thành phố không được để trống")
+    private String province;
+
+    @NotBlank(message = "Quận/Huyện không được để trống")
+    private String district;
+
+    @NotBlank(message = "Phường/Xã không được để trống")
+    private String ward;
+
+    @NotBlank(message = "Tên đường/Số nhà không được để trống")
+    private String street;
+
+    private Boolean isDefault;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\CartItemRequest.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/request/CartItemRequest.java
+package com.swt301.ecommerce.dto.request;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class CartItemRequest {
+    
+    @NotNull(message = "ID sản phẩm không được để trống")
+    private Integer productId;
+
+    @NotNull(message = "Số lượng không được để trống")
+    @Min(value = 1, message = "Số lượng phải lớn hơn 0")
+    private Integer quantity;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\CheckoutRequest.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/request/CheckoutRequest.java
+package com.swt301.ecommerce.dto.request;
+
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class CheckoutRequest {
+
+    @NotNull(message = "Vui lòng chọn địa chỉ giao hàng")
+    private Integer addressId;
+
+    @NotNull(message = "Vui lòng chọn phương thức thanh toán")
+    private Integer paymentMethodId;
+
+    // Voucher code có thể null nếu khách không dùng
+    private String voucherCode;
+
+    private String note;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\LoginRequest.java ===== 
+// Vị trí: src/main/java/com/teamproject/ecommerceapi/dto/request/LoginRequest.java
+package com.swt301.ecommerce.dto.request;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class LoginRequest {
+    @NotBlank(message = "Username không được để trống")
+    private String username;
+
+    @NotBlank(message = "Password không được để trống")
+    private String password;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\ProductRequest.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/request/ProductRequest.java
+package com.swt301.ecommerce.dto.request;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+
+@Getter
+@Setter
+public class ProductRequest {
+
+    @NotNull(message = "ID danh mục không được để trống")
+    private Integer categoryId;
+
+    @NotBlank(message = "Tên sản phẩm không được để trống")
+    private String productName;
+
+    private String description;
+
+    @NotNull(message = "Giá không được để trống")
+    @Min(value = 0, message = "Giá sản phẩm phải lớn hơn hoặc bằng 0")
+    private BigDecimal price;
+
+    @NotNull(message = "Số lượng không được để trống")
+    @Min(value = 0, message = "Số lượng tồn kho phải lớn hơn hoặc bằng 0")
+    private Integer stock;
+
+    private String image;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\request\RegisterRequest.java ===== 
+// Vị trí: src/main/java/com/teamproject/ecommerceapi/dto/request/RegisterRequest.java
+package com.swt301.ecommerce.dto.request;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class RegisterRequest {
+    @NotBlank(message = "Username không được để trống")
+    @Size(min = 3, max = 50)
+    private String username;
+
+    @NotBlank(message = "Password không được để trống")
+    @Size(min = 6, max = 40)
+    private String password;
+
+    @NotBlank(message = "Họ tên không được để trống")
+    private String fullName;
+
+    @NotBlank(message = "Email không được để trống")
+    @Email(message = "Email không đúng định dạng")
+    private String email;
+
+    private String phone;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\CartResponse.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/CartResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+import java.math.BigDecimal;
+import java.util.List;
+
+@Getter
+@Setter
+@Builder
+public class CartResponse {
+    private Integer cartId;
+    private List<CartItemDto> items;
+    private BigDecimal totalCartPrice; // Tổng tiền cả giỏ
+
+    @Getter
+    @Setter
+    @Builder
+    public static class CartItemDto {
+        private Integer cartItemId;
+        private Integer productId;
+        private String productName;
+        private String productImage;
+        private Integer quantity;
+        private BigDecimal unitPrice;
+        private BigDecimal itemSubtotal; // Tiền của riêng món này (số lượng * giá)
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\JwtResponse.java ===== 
+// Vị trí: src/main/java/com/teamproject/ecommerceapi/dto/response/JwtResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+@Builder
+@AllArgsConstructor
+public class JwtResponse {
+    private String token;
+    @Builder.Default
+    private String type = "Bearer";
+    private Integer id;
+    private String username;
+    private String email;
+    private String role; // DB thiết kế mỗi user 1 quyền
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\LoginResponse.java ===== 
+// Vị trí: dto/response/LoginResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class LoginResponse {
+    
+    private String accessToken;
+    
+    @Builder.Default
+    private String tokenType = "Bearer"; // Chuẩn token mặc định
+    
+    private Integer userId;
+    private String username;
+    private String fullName;
+    private String roleName; // Trả về role để Frontend biết đường hiển thị menu Admin/User
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\MessageResponse.java ===== 
+// Vị trí: src/main/java/com/teamproject/ecommerceapi/dto/response/MessageResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+@AllArgsConstructor
+public class MessageResponse {
+    private String message;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\OrderResponse.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/OrderResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Getter
+@Setter
+@Builder
+public class OrderResponse {
+    private Integer orderId;
+    private String orderCode;
+    private String status;
+    private String paymentMethod;
+    private String paymentStatus; 
+    
+    private BigDecimal subtotal;
+    private BigDecimal discount;
+    private BigDecimal shippingFee;
+    private BigDecimal total;
+    
+    private String receiverName;
+    private String receiverPhone;
+    private String shippingAddress; 
+    
+    private String note;
+    private LocalDateTime createdAt;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\OrderSummaryResponse.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/OrderSummaryResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Getter
+@Setter
+@Builder
+public class OrderSummaryResponse {
+    // Tái sử dụng lại CartItemDto từ CartResponse để hiển thị danh sách món hàng
+    private List<CartResponse.CartItemDto> items; 
+    
+    private BigDecimal subtotal;    // Tổng tiền hàng
+    private BigDecimal discount;    // Tiền giảm giá (từ Voucher)
+    private BigDecimal shippingFee; // Phí ship
+    private BigDecimal total;       // Tổng thanh toán cuối cùng
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\ProductResponse.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/ProductResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+
+@Getter
+@Setter
+@Builder
+public class ProductResponse {
+    private Integer productId;
+    private Integer categoryId;
+    private String categoryName;
+    private String productName;
+    private String description;
+    private BigDecimal price;
+    private Integer stock;
+    private String image;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\dto\response\VoucherResponse.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/VoucherResponse.java
+package com.swt301.ecommerce.dto.response;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+
+@Getter
+@Setter
+@Builder
+public class VoucherResponse {
+    private Integer voucherId;
+    private String voucherCode;
+    private String voucherName;
+    private String discountType;
+    private BigDecimal discountValue;
+    private BigDecimal minOrder;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Address.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Address.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "addresses")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Address {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "address_id")
+    private Integer addressId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "receiver_name")
+    private String receiverName;
+
+    @Column(name = "receiver_phone")
+    private String receiverPhone;
+
+    @Column(name = "province")
+    private String province;
+
+    @Column(name = "district")
+    private String district;
+
+    @Column(name = "ward")
+    private String ward;
+
+    @Column(name = "street")
+    private String street;
+
+    @Column(name = "is_default", columnDefinition = "boolean default false")
+    private Boolean isDefault;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Cart.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Cart.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.util.ArrayList;
+import java.util.List;
+
+@Entity
+@Table(name = "carts")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Cart {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "cart_id")
+    private Integer cartId;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    private User user;
+
+    @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<CartItem> cartItems = new ArrayList<>();
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\CartItem.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/CartItem.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "cart_items")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CartItem {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "cart_item_id")
+    private Integer cartItemId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cart_id", nullable = false)
+    private Cart cart;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
+
+    @Column(name = "quantity", nullable = false)
+    private Integer quantity;
+
+    @Column(name = "unit_price", nullable = false)
+    private BigDecimal unitPrice;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Category.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Category.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "categories")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Category {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "category_id")
+    private Integer categoryId;
+
+    @Column(name = "category_name", nullable = false)
+    private String categoryName;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Order.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Order.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Entity
+@Table(name = "orders")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Order {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "order_id")
+    private Integer orderId;
+
+    @Column(name = "order_code", unique = true, nullable = false)
+    private String orderCode;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "address_id", nullable = false)
+    private Address address;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "voucher_id")
+    private Voucher voucher; // Có thể null
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_method_id", nullable = false)
+    private PaymentMethod paymentMethod;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "status_id", nullable = false)
+    private OrderStatus status;
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<OrderItem> orderItems = new ArrayList<>();
+
+    @Column(name = "subtotal", nullable = false)
+    private BigDecimal subtotal;
+
+    @Column(name = "discount", columnDefinition = "numeric default 0")
+    private BigDecimal discount;
+
+    @Column(name = "shipping_fee", columnDefinition = "numeric default 0")
+    private BigDecimal shippingFee;
+
+    @Column(name = "total", nullable = false)
+    private BigDecimal total;
+
+    @Column(name = "note", columnDefinition = "TEXT")
+    private String note;
+
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\OrderItem.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/OrderItem.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "order_items")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class OrderItem {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "order_item_id")
+    private Integer orderItemId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id", nullable = false)
+    private Order order;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
+
+    @Column(name = "quantity", nullable = false)
+    private Integer quantity;
+
+    @Column(name = "unit_price", nullable = false)
+    private BigDecimal unitPrice; 
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\OrderStatus.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/OrderStatus.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "order_status")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class OrderStatus {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "status_id")
+    private Integer statusId;
+
+    @Column(name = "status_name", nullable = false)
+    private String statusName; // VD: "PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Payment.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Payment.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "payments")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Payment {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "payment_id")
+    private Integer paymentId;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id", nullable = false, unique = true)
+    private Order order;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_method_id", nullable = false)
+    private PaymentMethod paymentMethod;
+
+    @Column(name = "amount")
+    private BigDecimal amount;
+
+    @Column(name = "qr_image")
+    private String qrImage;
+
+    @Column(name = "payment_status")
+    private String paymentStatus; 
+
+    @Column(name = "payment_date")
+    private LocalDateTime paymentDate;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\PaymentMethod.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/PaymentMethod.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "payment_methods")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class PaymentMethod {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "payment_method_id")
+    private Integer paymentMethodId;
+
+    @Column(name = "method_name", nullable = false)
+    private String methodName; // VD: "COD", "QR_CODE"
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Product.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Product.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "products")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Product {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "product_id")
+    private Integer productId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id", nullable = false)
+    private Category category;
+
+    @Column(name = "product_name", nullable = false)
+    private String productName;
+
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "price", nullable = false)
+    private BigDecimal price; // Luôn dùng BigDecimal cho tiền bạc
+
+    @Column(name = "stock", nullable = false)
+    private Integer stock;
+
+    @Column(name = "image")
+    private String image;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Role.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Role.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "roles")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Role {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "role_id")
+    private Integer roleId;
+
+    @Column(name = "role_name", nullable = false, unique = true)
+    private String roleName;
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\User.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/User.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "users")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id")
+    private Integer userId;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "role_id", nullable = false)
+    private Role role;
+
+    @Column(name = "username", nullable = false, unique = true)
+    private String username;
+
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
+
+    @Column(name = "full_name")
+    private String fullName;
+
+    @Column(name = "email")
+    private String email;
+
+    @Column(name = "phone")
+    private String phone;
+
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\entity\Voucher.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/entity/Voucher.java
+package com.swt301.ecommerce.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "vouchers")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Voucher {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "voucher_id")
+    private Integer voucherId;
+
+    @Column(name = "voucher_code", unique = true, nullable = false)
+    private String voucherCode;
+
+    @Column(name = "voucher_name")
+    private String voucherName;
+
+    @Column(name = "discount_type")
+    private String discountType; // "PERCENT" hoặc "FIXED"
+
+    @Column(name = "discount_value")
+    private BigDecimal discountValue;
+
+    @Column(name = "min_order")
+    private BigDecimal minOrder;
+
+    @Column(name = "expired_date")
+    private LocalDateTime expiredDate;
+
+    @Column(name = "quantity")
+    private Integer quantity;
+
+    @Column(name = "status")
+    private String status; // "ACTIVE" hoặc "INACTIVE"
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\exception\ErrorResponse.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/exception/ErrorResponse.java
+package com.swt301.ecommerce.exception;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+import java.util.Map;
+
+@Getter
+@Setter
+@AllArgsConstructor
+public class ErrorResponse {
+    private int status;
+    private String message;
+    private Map<String, String> errors; // Dùng để trả về tên trường bị lỗi (vd: { "receiverPhone": "Sai định dạng" })
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\exception\GlobalExceptionHandler.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/exception/GlobalExceptionHandler.java
+package com.swt301.ecommerce.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            errors.put(error.getField(), error.getDefaultMessage());
+        }
+        ErrorResponse response = new ErrorResponse(HttpStatus.BAD_REQUEST.value(), "Validation Error", errors);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ErrorResponse> handleRuntimeExceptions(RuntimeException ex) {
+        ErrorResponse response = new ErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage(), null);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\AddressRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/AddressRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Address;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface AddressRepository extends JpaRepository<Address, Integer> {
+    List<Address> findByUser_UserId(Integer userId);
+    Optional<Address> findByAddressIdAndUser_UserId(Integer addressId, Integer userId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\CartItemRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/CartItemRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.CartItem;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface CartItemRepository extends JpaRepository<CartItem, Integer> {
+    Optional<CartItem> findByCart_CartIdAndProduct_ProductId(Integer cartId, Integer productId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\CartRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/CartRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Cart;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface CartRepository extends JpaRepository<Cart, Integer> {
+    Optional<Cart> findByUser_UserId(Integer userId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\CategoryRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/CategoryRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Category;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface CategoryRepository extends JpaRepository<Category, Integer> {
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\OrderItemRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/OrderItemRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.OrderItem;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface OrderItemRepository extends JpaRepository<OrderItem, Integer> {
+    List<OrderItem> findByOrder_OrderId(Integer orderId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\OrderRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/OrderRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Order;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface OrderRepository extends JpaRepository<Order, Integer> {
+    Optional<Order> findByOrderCode(String orderCode);
+    List<Order> findByUser_UserIdOrderByCreatedAtDesc(Integer userId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\OrderStatusRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/OrderStatusRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.OrderStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface OrderStatusRepository extends JpaRepository<OrderStatus, Integer> {
+    Optional<OrderStatus> findByStatusName(String statusName);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\PaymentMethodRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/PaymentMethodRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.PaymentMethod;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface PaymentMethodRepository extends JpaRepository<PaymentMethod, Integer> {
+    Optional<PaymentMethod> findByMethodName(String methodName);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\PaymentRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/PaymentRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Payment;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface PaymentRepository extends JpaRepository<Payment, Integer> {
+    Optional<Payment> findByOrder_OrderId(Integer orderId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\ProductRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/ProductRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Product;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface ProductRepository extends JpaRepository<Product, Integer> {
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\RoleRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/RoleRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Role;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface RoleRepository extends JpaRepository<Role, Integer> {
+    Optional<Role> findByRoleName(String roleName);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\UserRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/UserRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Integer> {
+    Optional<User> findByUsername(String username);
+    Boolean existsByUsername(String username); // Dùng để check trùng username khi Đăng ký
+    Boolean existsByEmail(String email);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\repository\VoucherRepository.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/repository/VoucherRepository.java
+package com.swt301.ecommerce.repository;
+
+import com.swt301.ecommerce.entity.Voucher;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface VoucherRepository extends JpaRepository<Voucher, Integer> {
+    Optional<Voucher> findByVoucherCode(String voucherCode);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\security\AuthEntryPointJwt.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/security/AuthEntryPointJwt.java
+package com.swt301.ecommerce.security;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+@Component
+public class AuthEntryPointJwt implements AuthenticationEntryPoint {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthEntryPointJwt.class);
+
+    @Override
+    public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException authException)
+            throws IOException, ServletException {
+        logger.error("Unauthorized error: {}", authException.getMessage());
+
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+        final Map<String, Object> body = new HashMap<>();
+        body.put("status", HttpServletResponse.SC_UNAUTHORIZED);
+        body.put("error", "Unauthorized");
+        body.put("message", authException.getMessage());
+        body.put("path", request.getServletPath());
+
+        final ObjectMapper mapper = new ObjectMapper();
+        mapper.writeValue(response.getOutputStream(), body);
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\security\AuthTokenFilter.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/security/AuthTokenFilter.java
+package com.swt301.ecommerce.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+public class AuthTokenFilter extends OncePerRequestFilter {
+    
+    @Autowired
+    private JwtUtils jwtUtils;
+
+    @Autowired
+    private UserDetailsServiceImpl userDetailsService;
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+        try {
+            String jwt = parseJwt(request);
+            if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
+                String username = jwtUtils.getUserNameFromJwtToken(jwt);
+
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                userDetails,
+                                null,
+                                userDetails.getAuthorities());
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
+        } catch (Exception e) {
+            logger.error("Cannot set user authentication: {}", e);
+        }
+
+        filterChain.doFilter(request, response);
+    }
+
+    private String parseJwt(HttpServletRequest request) {
+        String headerAuth = request.getHeader("Authorization");
+        if (StringUtils.hasText(headerAuth) && headerAuth.startsWith("Bearer ")) {
+            return headerAuth.substring(7);
+        }
+        return null;
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\security\JwtUtils.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/security/JwtUtils.java
+package com.swt301.ecommerce.security;
+
+import io.jsonwebtoken.*;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Component;
+
+import java.security.Key;
+import java.util.Date;
+
+@Component
+public class JwtUtils {
+    private static final Logger logger = LoggerFactory.getLogger(JwtUtils.class);
+
+    @Value("${jwt.secret:MotChuoiBiMatSieuDaiVaPhucTapDeBaoMatHon256BitsNhe}")
+    private String jwtSecret;
+
+    @Value("${jwt.expirationMs:86400000}") // 24h
+    private int jwtExpirationMs;
+
+    public String generateJwtToken(Authentication authentication) {
+        UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
+
+        return Jwts.builder()
+                .setSubject((userPrincipal.getUsername()))
+                .setIssuedAt(new Date())
+                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .signWith(key(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    private Key key() {
+        // Truyền thẳng mảng byte[] vào hàm tạo Key
+        return Keys.hmacShaKeyFor(tryGetBase64Secret());
+    }
+    
+    private byte[] tryGetBase64Secret() {
+        try {
+            // Thử giải mã nếu chuỗi secret của bạn trong application.yml là dạng Base64
+            return Decoders.BASE64.decode(jwtSecret);
+        } catch (Exception e) {
+            // Nếu không phải dạng Base64 thì cứ lấy mảng byte bình thường
+            return jwtSecret.getBytes();
+        }
+    }
+
+    public String getUserNameFromJwtToken(String token) {
+        return Jwts.parserBuilder().setSigningKey(key()).build()
+                .parseClaimsJws(token).getBody().getSubject();
+    }
+
+    public boolean validateJwtToken(String authToken) {
+        try {
+            Jwts.parserBuilder().setSigningKey(key()).build().parse(authToken);
+            return true;
+        } catch (MalformedJwtException e) {
+            logger.error("Invalid JWT token: {}", e.getMessage());
+        } catch (ExpiredJwtException e) {
+            logger.error("JWT token is expired: {}", e.getMessage());
+        } catch (UnsupportedJwtException e) {
+            logger.error("JWT token is unsupported: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            logger.error("JWT claims string is empty: {}", e.getMessage());
+        }
+        return false;
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\security\SecurityConfig.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/security/SecurityConfig.java
+package com.swt301.ecommerce.security;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@EnableMethodSecurity
+@RequiredArgsConstructor
+public class SecurityConfig {
+
+    private final UserDetailsServiceImpl userDetailsService;
+    private final AuthEntryPointJwt unauthorizedHandler;
+
+    @Bean
+    public AuthTokenFilter authenticationJwtTokenFilter() {
+        return new AuthTokenFilter();
+    }
+
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        // Truyền thẳng service tìm user vào constructor lúc khởi tạo
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
+        return authProvider;
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
+        return authConfig.getAuthenticationManager();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    // Trích đoạn trong file SecurityConfig.java
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+            .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/auth/**", "/api/products/**").permitAll() // ĐÃ THÊM /api/products/** VÀO ĐÂY
+                .anyRequest().authenticated()
+            );
+
+        http.authenticationProvider(authenticationProvider());
+        http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\security\UserDetailsImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/security/UserDetailsImpl.java
+package com.swt301.ecommerce.security;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.swt301.ecommerce.entity.User;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import java.util.Collection;
+import java.util.Collections;
+
+@Getter
+@AllArgsConstructor
+public class UserDetailsImpl implements UserDetails {
+    private static final long serialVersionUID = 1L;
+
+    private Integer id;
+    private String username;
+    private String email;
+
+    @JsonIgnore
+    private String password;
+
+    private Collection<? extends GrantedAuthority> authorities;
+
+    public static UserDetailsImpl build(User user) {
+        // Ánh xạ 1 Role thành Authority của Spring Security
+        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + user.getRole().getRoleName().toUpperCase());
+
+        return new UserDetailsImpl(
+                user.getUserId(),
+                user.getUsername(),
+                user.getEmail(),
+                user.getPasswordHash(),
+                Collections.singletonList(authority));
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() { return authorities; }
+    @Override
+    public String getPassword() { return password; }
+    @Override
+    public String getUsername() { return username; }
+    @Override
+    public boolean isAccountNonExpired() { return true; }
+    @Override
+    public boolean isAccountNonLocked() { return true; }
+    @Override
+    public boolean isCredentialsNonExpired() { return true; }
+    @Override
+    public boolean isEnabled() { return true; }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\security\UserDetailsServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/security/UserDetailsServiceImpl.java
+package com.swt301.ecommerce.security;
+
+import com.swt301.ecommerce.entity.User;
+import com.swt301.ecommerce.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class UserDetailsServiceImpl implements UserDetailsService {
+    
+    private final UserRepository userRepository;
+
+    @Override
+    @Transactional
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User Not Found with username: " + username));
+
+        return UserDetailsImpl.build(user);
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\AddressService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/AddressService.java
+package com.swt301.ecommerce.service;
+
+import com.swt301.ecommerce.dto.request.AddressRequest;
+import com.swt301.ecommerce.entity.Address;
+import java.util.List;
+
+public interface AddressService {
+    List<Address> getUserAddresses(Integer userId);
+    Address createAddress(Integer userId, AddressRequest request);
+    Address updateAddress(Integer addressId, Integer userId, AddressRequest request);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\AuthService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/AuthService.java
+package com.swt301.ecommerce.service;
+
+import com.swt301.ecommerce.dto.request.LoginRequest;
+import com.swt301.ecommerce.dto.request.RegisterRequest;
+import com.swt301.ecommerce.dto.response.JwtResponse;
+import com.swt301.ecommerce.dto.response.MessageResponse;
+
+public interface AuthService {
+    JwtResponse login(LoginRequest loginRequest);
+    MessageResponse register(RegisterRequest registerRequest);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\CartService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/CartService.java
+package com.swt301.ecommerce.service;
+
+import com.swt301.ecommerce.dto.request.CartItemRequest;
+import com.swt301.ecommerce.dto.response.CartResponse;
+
+public interface CartService {
+    CartResponse getCart(Integer userId);
+    CartResponse addToCart(Integer userId, CartItemRequest request);
+    CartResponse updateCartItem(Integer userId, CartItemRequest request);
+    CartResponse removeCartItem(Integer userId, Integer cartItemId);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\FileUploadService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/FileUploadService.java
+package com.swt301.ecommerce.service;
+
+import org.springframework.web.multipart.MultipartFile;
+
+public interface FileUploadService {
+    String uploadImage(MultipartFile file);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\OrderService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/OrderService.java
+package com.swt301.ecommerce.service;
+
+import com.swt301.ecommerce.dto.response.OrderResponse;
+import com.swt301.ecommerce.dto.response.OrderSummaryResponse;
+
+public interface OrderService {
+    // FE-11: Tính toán hóa đơn tạm tính
+    OrderSummaryResponse previewOrder(Integer userId, String voucherCode);
+    // FE-13 & FE-17: Chốt đơn hàng
+    OrderResponse createOrder(Integer userId, com.swt301.ecommerce.dto.request.CheckoutRequest request);
+    // FE-15: Cập nhật link ảnh QR vào đơn hàng
+    void updatePaymentQrImage(Integer orderId, Integer userId, String qrImageUrl);
+
+    // FE-19: Lấy danh sách lịch sử đơn hàng của User
+    java.util.List<com.swt301.ecommerce.dto.response.OrderResponse> getUserOrders(Integer userId);
+    // --- LUỒNG DÀNH CHO ADMIN ---
+    // 1. Xem toàn bộ đơn hàng trong hệ thống
+    java.util.List<com.swt301.ecommerce.dto.response.OrderResponse> getAllSystemOrders();
+    
+    // 2. Admin cập nhật trạng thái đơn hàng (VD: PENDING -> SHIPPED)
+    com.swt301.ecommerce.dto.response.OrderResponse updateOrderStatus(Integer orderId, Integer statusId);
+    
+    // 3. Admin duyệt biên lai chuyển khoản QR (VD: PENDING_VERIFICATION -> PAID)
+    com.swt301.ecommerce.dto.response.OrderResponse verifyPayment(Integer orderId, String paymentStatus);
+}
+ 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\ProductService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/ProductService.java
+package com.swt301.ecommerce.service;
+
+import com.swt301.ecommerce.dto.request.ProductRequest;
+import com.swt301.ecommerce.dto.response.ProductResponse;
+import java.util.List;
+
+public interface ProductService {
+    List<ProductResponse> getAllProducts();
+    ProductResponse getProductById(Integer id);
+    ProductResponse createProduct(ProductRequest request);
+    ProductResponse updateProduct(Integer id, ProductRequest request);
+    void deleteProduct(Integer id);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\VoucherService.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/VoucherService.java
+package com.swt301.ecommerce.service;
+
+import com.swt301.ecommerce.dto.response.VoucherResponse;
+import java.math.BigDecimal;
+
+public interface VoucherService {
+    VoucherResponse checkVoucher(String code, BigDecimal orderSubtotal);
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\AddressServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/AddressServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.swt301.ecommerce.dto.request.AddressRequest;
+import com.swt301.ecommerce.entity.Address;
+import com.swt301.ecommerce.entity.User;
+import com.swt301.ecommerce.repository.AddressRepository;
+import com.swt301.ecommerce.repository.UserRepository;
+import com.swt301.ecommerce.service.AddressService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class AddressServiceImpl implements AddressService {
+
+    private final AddressRepository addressRepository;
+    private final UserRepository userRepository;
+
+    @Override
+    public List<Address> getUserAddresses(Integer userId) {
+        return addressRepository.findByUser_UserId(userId);
+    }
+
+    @Override
+    @Transactional
+    public Address createAddress(Integer userId, AddressRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy user"));
+
+        handleDefaultAddress(userId, request.getIsDefault());
+
+        Address address = Address.builder()
+                .user(user)
+                .receiverName(request.getReceiverName())
+                .receiverPhone(request.getReceiverPhone())
+                .province(request.getProvince())
+                .district(request.getDistrict())
+                .ward(request.getWard())
+                .street(request.getStreet())
+                .isDefault(request.getIsDefault() != null ? request.getIsDefault() : false)
+                .build();
+
+        return addressRepository.save(address);
+    }
+
+    @Override
+    @Transactional
+    public Address updateAddress(Integer addressId, Integer userId, AddressRequest request) {
+        Address address = addressRepository.findByAddressIdAndUser_UserId(addressId, userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy địa chỉ hoặc bạn không có quyền sửa"));
+
+        handleDefaultAddress(userId, request.getIsDefault());
+
+        address.setReceiverName(request.getReceiverName());
+        address.setReceiverPhone(request.getReceiverPhone());
+        address.setProvince(request.getProvince());
+        address.setDistrict(request.getDistrict());
+        address.setWard(request.getWard());
+        address.setStreet(request.getStreet());
+        
+        if (request.getIsDefault() != null) {
+            address.setIsDefault(request.getIsDefault());
+        }
+
+        return addressRepository.save(address);
+    }
+
+    private void handleDefaultAddress(Integer userId, Boolean isDefault) {
+        if (Boolean.TRUE.equals(isDefault)) {
+            List<Address> addresses = addressRepository.findByUser_UserId(userId);
+            for (Address addr : addresses) {
+                if (Boolean.TRUE.equals(addr.getIsDefault())) {
+                    addr.setIsDefault(false);
+                    addressRepository.save(addr);
+                }
+            }
+        }
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\AuthServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/AuthServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.swt301.ecommerce.dto.request.LoginRequest;
+import com.swt301.ecommerce.dto.request.RegisterRequest;
+import com.swt301.ecommerce.dto.response.JwtResponse;
+import com.swt301.ecommerce.dto.response.MessageResponse;
+import com.swt301.ecommerce.entity.*;
+import com.swt301.ecommerce.repository.*;
+import com.swt301.ecommerce.security.JwtUtils;
+import com.swt301.ecommerce.security.UserDetailsImpl;
+import com.swt301.ecommerce.service.AuthService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class AuthServiceImpl implements AuthService {
+
+    private final AuthenticationManager authenticationManager;
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final PasswordEncoder encoder;
+    private final JwtUtils jwtUtils;
+
+    @Override
+    public JwtResponse login(LoginRequest loginRequest) {
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        String jwt = jwtUtils.generateJwtToken(authentication);
+
+        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+        return JwtResponse.builder()
+                .token(jwt)
+                .id(userDetails.getId())
+                .username(userDetails.getUsername())
+                .email(userDetails.getEmail())
+                .role(userDetails.getAuthorities().iterator().next().getAuthority())
+                .build();
+    }
+
+    @Override
+    public MessageResponse register(RegisterRequest request) {
+        if (userRepository.existsByUsername(request.getUsername())) {
+            throw new RuntimeException("Error: Username is already taken!");
+        }
+        
+        Role userRole = roleRepository.findByRoleName("CUSTOMER")
+                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+
+        User user = User.builder()
+                .username(request.getUsername())
+                .passwordHash(encoder.encode(request.getPassword()))
+                .email(request.getEmail())
+                .fullName(request.getFullName())
+                .phone(request.getPhone())
+                .role(userRole)
+                .build();
+
+        userRepository.save(user);
+        return new MessageResponse("User registered successfully!");
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\CartServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.swt301.ecommerce.dto.request.CartItemRequest;
+import com.swt301.ecommerce.dto.response.CartResponse;
+import com.swt301.ecommerce.entity.Cart;
+import com.swt301.ecommerce.entity.CartItem;
+import com.swt301.ecommerce.entity.Product;
+import com.swt301.ecommerce.entity.User;
+import com.swt301.ecommerce.repository.CartItemRepository;
+import com.swt301.ecommerce.repository.CartRepository;
+import com.swt301.ecommerce.repository.ProductRepository;
+import com.swt301.ecommerce.repository.UserRepository;
+import com.swt301.ecommerce.service.CartService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class CartServiceImpl implements CartService {
+
+    private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
+    private final ProductRepository productRepository;
+    private final UserRepository userRepository;
+
+    @Override
+    public CartResponse getCart(Integer userId) {
+        Cart cart = getOrCreateCart(userId);
+        return mapToCartResponse(cart);
+    }
+
+    @Override
+    @Transactional
+    public CartResponse addToCart(Integer userId, CartItemRequest request) {
+        Cart cart = getOrCreateCart(userId);
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new RuntimeException("Sản phẩm không tồn tại"));
+
+        if (product.getStock() < request.getQuantity()) {
+            throw new RuntimeException("Số lượng sản phẩm trong kho không đủ");
+        }
+
+        Optional<CartItem> existingItem = cartItemRepository.findByCart_CartIdAndProduct_ProductId(
+                cart.getCartId(), product.getProductId());
+
+        if (existingItem.isPresent()) {
+            // Đã có trong giỏ -> Cộng dồn
+            CartItem item = existingItem.get();
+            item.setQuantity(item.getQuantity() + request.getQuantity());
+            cartItemRepository.save(item);
+        } else {
+            // Chưa có -> Tạo mới
+            CartItem newItem = CartItem.builder()
+                    .cart(cart)
+                    .product(product)
+                    .quantity(request.getQuantity())
+                    .unitPrice(product.getPrice()) 
+                    .build();
+            cartItemRepository.save(newItem);
+        }
+
+        return mapToCartResponse(getOrCreateCart(userId));
+    }
+
+    @Override
+    @Transactional
+    public CartResponse updateCartItem(Integer userId, CartItemRequest request) {
+        Cart cart = getOrCreateCart(userId);
+        CartItem item = cartItemRepository.findByCart_CartIdAndProduct_ProductId(cart.getCartId(), request.getProductId())
+                .orElseThrow(() -> new RuntimeException("Sản phẩm không có trong giỏ hàng"));
+
+        if (item.getProduct().getStock() < request.getQuantity()) {
+            throw new RuntimeException("Số lượng sản phẩm trong kho không đủ");
+        }
+
+        // Sửa số lượng (ghi đè, không cộng dồn)
+        item.setQuantity(request.getQuantity());
+        cartItemRepository.save(item);
+
+        return mapToCartResponse(getOrCreateCart(userId));
+    }
+
+    @Override
+    @Transactional
+    public CartResponse removeCartItem(Integer userId, Integer cartItemId) {
+        CartItem item = cartItemRepository.findById(cartItemId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm trong giỏ"));
+
+        if (!item.getCart().getUser().getUserId().equals(userId)) {
+            throw new RuntimeException("Bạn không có quyền xóa sản phẩm này");
+        }
+
+        cartItemRepository.delete(item);
+        return mapToCartResponse(getOrCreateCart(userId));
+    }
+
+    // --- INTERNAL METHODS ---
+    private Cart getOrCreateCart(Integer userId) {
+        return cartRepository.findByUser_UserId(userId).orElseGet(() -> {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy user"));
+            Cart newCart = Cart.builder().user(user).build();
+            return cartRepository.save(newCart);
+        });
+    }
+
+    private CartResponse mapToCartResponse(Cart cart) {
+        BigDecimal totalCartPrice = BigDecimal.ZERO;
+        
+        List<CartResponse.CartItemDto> itemDtos = cart.getCartItems().stream().map(item -> {
+            BigDecimal subtotal = item.getUnitPrice().multiply(new BigDecimal(item.getQuantity()));
+            return CartResponse.CartItemDto.builder()
+                    .cartItemId(item.getCartItemId())
+                    .productId(item.getProduct().getProductId())
+                    .productName(item.getProduct().getProductName())
+                    .productImage(item.getProduct().getImage())
+                    .quantity(item.getQuantity())
+                    .unitPrice(item.getUnitPrice())
+                    .itemSubtotal(subtotal)
+                    .build();
+        }).collect(Collectors.toList());
+
+        for (CartResponse.CartItemDto dto : itemDtos) {
+            totalCartPrice = totalCartPrice.add(dto.getItemSubtotal());
+        }
+
+        return CartResponse.builder()
+                .cartId(cart.getCartId())
+                .items(itemDtos)
+                .totalCartPrice(totalCartPrice)
+                .build();
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\FileUploadServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/FileUploadServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
+import com.swt301.ecommerce.service.FileUploadService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.Map;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class FileUploadServiceImpl implements FileUploadService {
+
+    private final Cloudinary cloudinary;
+
+    @Override
+    public String uploadImage(MultipartFile file) {
+        try {
+            // Tạo tên file ngẫu nhiên (Public ID)
+            String publicId = "QR_" + UUID.randomUUID().toString();
+            
+            // Upload lên thư mục "ecommerce_qr" trên Cloudinary
+            Map uploadResult = cloudinary.uploader().upload(file.getBytes(),
+                    ObjectUtils.asMap("public_id", publicId, "folder", "ecommerce_qr"));
+            
+            // Trả về đường link ảnh bảo mật (https)
+            return uploadResult.get("secure_url").toString();
+        } catch (IOException e) {
+            throw new RuntimeException("Lỗi khi tải ảnh lên server: " + e.getMessage());
+        }
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\OrderServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/OrderServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.swt301.ecommerce.dto.request.CheckoutRequest;
+import com.swt301.ecommerce.dto.response.CartResponse;
+import com.swt301.ecommerce.dto.response.OrderResponse;
+import com.swt301.ecommerce.dto.response.OrderSummaryResponse;
+import com.swt301.ecommerce.entity.*;
+import com.swt301.ecommerce.repository.*;
+import com.swt301.ecommerce.service.OrderService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class OrderServiceImpl implements OrderService {
+
+    private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
+    private final VoucherRepository voucherRepository;
+    private final AddressRepository addressRepository;
+    private final PaymentMethodRepository paymentMethodRepository;
+    private final OrderStatusRepository orderStatusRepository;
+    private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final PaymentRepository paymentRepository;
+    private final ProductRepository productRepository;
+
+    // ... (Giữ nguyên hàm previewOrder và calculateDiscount từ bước trước ở đây) ...
+    @Override
+    public OrderSummaryResponse previewOrder(Integer userId, String voucherCode) {
+        // ... (Code của FE-11 đã viết) ...
+        Cart cart = cartRepository.findByUser_UserId(userId)
+                .orElseThrow(() -> new RuntimeException("Giỏ hàng không tồn tại"));
+        
+        if (cart.getCartItems().isEmpty()) {
+            throw new RuntimeException("Không có sản phẩm nào trong giỏ hàng để thanh toán");
+        }
+
+        BigDecimal subtotal = BigDecimal.ZERO;
+        List<CartResponse.CartItemDto> itemDtos = cart.getCartItems().stream().map(item -> {
+            BigDecimal itemSub = item.getUnitPrice().multiply(new BigDecimal(item.getQuantity()));
+            return CartResponse.CartItemDto.builder()
+                    .cartItemId(item.getCartItemId())
+                    .productId(item.getProduct().getProductId())
+                    .productName(item.getProduct().getProductName())
+                    .productImage(item.getProduct().getImage())
+                    .quantity(item.getQuantity())
+                    .unitPrice(item.getUnitPrice())
+                    .itemSubtotal(itemSub)
+                    .build();
+        }).collect(Collectors.toList());
+
+        for (CartResponse.CartItemDto dto : itemDtos) {
+            subtotal = subtotal.add(dto.getItemSubtotal());
+        }
+
+        BigDecimal discount = calculateDiscount(voucherCode, subtotal);
+        BigDecimal shippingFee = subtotal.compareTo(new BigDecimal("500000")) >= 0 
+                ? BigDecimal.ZERO : new BigDecimal("30000");
+        BigDecimal total = subtotal.subtract(discount).add(shippingFee);
+        if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
+
+        return OrderSummaryResponse.builder()
+                .items(itemDtos).subtotal(subtotal).discount(discount).shippingFee(shippingFee).total(total).build();
+    }
+
+    private BigDecimal calculateDiscount(String voucherCode, BigDecimal subtotal) {
+        // ... (Code của FE-11 đã viết) ...
+        if (voucherCode == null || voucherCode.isBlank()) return BigDecimal.ZERO;
+        Voucher voucher = voucherRepository.findByVoucherCode(voucherCode)
+                .orElseThrow(() -> new RuntimeException("Mã giảm giá không tồn tại"));
+        if (!"ACTIVE".equalsIgnoreCase(voucher.getStatus()) || 
+            (voucher.getQuantity() != null && voucher.getQuantity() <= 0) ||
+            (voucher.getExpiredDate() != null && voucher.getExpiredDate().isBefore(LocalDateTime.now())) ||
+            (voucher.getMinOrder() != null && subtotal.compareTo(voucher.getMinOrder()) < 0)) {
+            throw new RuntimeException("Mã giảm giá không hợp lệ hoặc không đủ điều kiện");
+        }
+        if ("FIXED".equalsIgnoreCase(voucher.getDiscountType())) return voucher.getDiscountValue();
+        else if ("PERCENT".equalsIgnoreCase(voucher.getDiscountType())) 
+            return subtotal.multiply(voucher.getDiscountValue()).divide(new BigDecimal("100"));
+        return BigDecimal.ZERO;
+    }
+
+
+    // ==========================================
+    // FE-13 & FE-17: CHỐT ĐƠN VÀ LƯU DB
+    // ==========================================
+    @Override
+    @Transactional // Nếu có bất kỳ Exception nào, toàn bộ dữ liệu (trừ tồn kho, lưu đơn) sẽ tự động quay xe!
+    public OrderResponse createOrder(Integer userId, CheckoutRequest request) {
+        
+        // 1. Validate nền tảng
+        Cart cart = cartRepository.findByUser_UserId(userId)
+                .orElseThrow(() -> new RuntimeException("Giỏ hàng không tồn tại"));
+        if (cart.getCartItems().isEmpty()) throw new RuntimeException("Giỏ hàng đang trống");
+
+        Address address = addressRepository.findByAddressIdAndUser_UserId(request.getAddressId(), userId)
+                .orElseThrow(() -> new RuntimeException("Địa chỉ giao hàng không hợp lệ"));
+        
+        PaymentMethod paymentMethod = paymentMethodRepository.findById(request.getPaymentMethodId())
+                .orElseThrow(() -> new RuntimeException("Phương thức thanh toán không hợp lệ"));
+        
+        OrderStatus pendingStatus = orderStatusRepository.findByStatusName("PENDING")
+                .orElseThrow(() -> new RuntimeException("Lỗi hệ thống: Chưa cấu hình trạng thái PENDING"));
+
+        // 2. Chạy lại thuật toán tính tiền để chốt số (Bảo mật tuyệt đối, không tin giá trị từ FE gửi lên)
+        OrderSummaryResponse summary = previewOrder(userId, request.getVoucherCode());
+        
+        // Trừ lượt sử dụng Voucher
+        Voucher appliedVoucher = null;
+        if (request.getVoucherCode() != null && !request.getVoucherCode().isBlank()) {
+            appliedVoucher = voucherRepository.findByVoucherCode(request.getVoucherCode()).get();
+            appliedVoucher.setQuantity(appliedVoucher.getQuantity() - 1);
+            voucherRepository.save(appliedVoucher);
+        }
+
+        // 3. Khởi tạo và Lưu bảng Order
+        String orderCode = "ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        Order order = Order.builder()
+                .orderCode(orderCode).user(cart.getUser()).address(address).voucher(appliedVoucher)
+                .paymentMethod(paymentMethod).status(pendingStatus)
+                .subtotal(summary.getSubtotal()).discount(summary.getDiscount())
+                .shippingFee(summary.getShippingFee()).total(summary.getTotal())
+                .note(request.getNote())
+                .build();
+        order = orderRepository.save(order);
+
+        // 4. Lưu bảng OrderItem và Trừ Stock
+        for (CartItem cartItem : cart.getCartItems()) {
+            Product product = cartItem.getProduct();
+            if (product.getStock() < cartItem.getQuantity()) {
+                throw new RuntimeException("Sản phẩm " + product.getProductName() + " đã hết hoặc không đủ số lượng");
+            }
+            
+            // Trừ số lượng tồn kho
+            product.setStock(product.getStock() - cartItem.getQuantity());
+            productRepository.save(product);
+
+            OrderItem orderItem = OrderItem.builder()
+                    .order(order).product(product)
+                    .quantity(cartItem.getQuantity()).unitPrice(cartItem.getUnitPrice())
+                    .build();
+            orderItemRepository.save(orderItem);
+        }
+
+        // 5. FE-13: Rẽ nhánh luồng Thanh Toán
+        String paymentStatus = "PENDING";
+        if ("QR_CODE".equalsIgnoreCase(paymentMethod.getMethodName())) {
+            paymentStatus = "AWAITING_PAYMENT"; // Nếu là QR thì chờ khách tải bill lên
+        }
+
+        Payment payment = Payment.builder()
+                .order(order).paymentMethod(paymentMethod)
+                .amount(summary.getTotal()).paymentStatus(paymentStatus)
+                .build();
+        paymentRepository.save(payment);
+
+        // 6. Dọn dẹp giỏ hàng
+        cartItemRepository.deleteAll(cart.getCartItems());
+
+        // 7. Trả kết quả
+        String fullAddress = address.getStreet() + ", " + address.getWard() + ", " + address.getDistrict() + ", " + address.getProvince();
+        return OrderResponse.builder()
+                .orderId(order.getOrderId())
+                .orderCode(order.getOrderCode())
+                .status(pendingStatus.getStatusName())
+                .paymentMethod(paymentMethod.getMethodName())
+                .paymentStatus(paymentStatus)
+                .subtotal(order.getSubtotal())
+                .discount(order.getDiscount())
+                .shippingFee(order.getShippingFee())
+                .total(order.getTotal())
+                .receiverName(address.getReceiverName())
+                .receiverPhone(address.getReceiverPhone())
+                .shippingAddress(fullAddress)
+                .note(order.getNote())
+                .createdAt(order.getCreatedAt())
+                .build();
+    }
+    // ==========================================
+    // FE-15: CẬP NHẬT ẢNH QR VÀO DB
+    // ==========================================
+    @Override
+    @Transactional
+    public void updatePaymentQrImage(Integer orderId, Integer userId, String qrImageUrl) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng"));
+                
+        // Chỉ chủ đơn hàng mới được upload ảnh
+        if (!order.getUser().getUserId().equals(userId)) {
+            throw new RuntimeException("Bạn không có quyền thao tác trên đơn hàng này");
+        }
+
+        Payment payment = paymentRepository.findByOrder_OrderId(orderId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin thanh toán"));
+
+        payment.setQrImage(qrImageUrl);
+        payment.setPaymentStatus("PENDING_VERIFICATION"); // Đổi trạng thái chờ Admin duyệt bill
+        paymentRepository.save(payment);
+    }
+
+    // ==========================================
+    // FE-19: LẤY DANH SÁCH LỊCH SỬ ĐƠN HÀNG
+    // ==========================================
+    @Override
+    public List<OrderResponse> getUserOrders(Integer userId) {
+        List<Order> orders = orderRepository.findByUser_UserIdOrderByCreatedAtDesc(userId);
+        
+        return orders.stream().map(order -> {
+            String paymentStatus = "N/A";
+            var paymentOpt = paymentRepository.findByOrder_OrderId(order.getOrderId());
+            if (paymentOpt.isPresent()) {
+                paymentStatus = paymentOpt.get().getPaymentStatus();
+            }
+
+            Address address = order.getAddress();
+            String fullAddress = address.getStreet() + ", " + address.getWard() + 
+                                 ", " + address.getDistrict() + ", " + address.getProvince();
+
+            return OrderResponse.builder()
+                    .orderId(order.getOrderId())
+                    .orderCode(order.getOrderCode())
+                    .status(order.getStatus().getStatusName())
+                    .paymentMethod(order.getPaymentMethod().getMethodName())
+                    .paymentStatus(paymentStatus)
+                    .subtotal(order.getSubtotal())
+                    .discount(order.getDiscount())
+                    .shippingFee(order.getShippingFee())
+                    .total(order.getTotal())
+                    .receiverName(address.getReceiverName())
+                    .receiverPhone(address.getReceiverPhone())
+                    .shippingAddress(fullAddress)
+                    .note(order.getNote())
+                    .createdAt(order.getCreatedAt())
+                    .build();
+        }).collect(Collectors.toList());
+    }
+    // ==========================================
+    // LUỒNG DÀNH CHO ADMIN (QUẢN LÝ ĐƠN HÀNG)
+    // ==========================================
+    @Override
+    public List<OrderResponse> getAllSystemOrders() {
+        // Lấy tất cả đơn hàng, xếp mới nhất lên đầu
+        List<Order> orders = orderRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        return orders.stream().map(this::mapToOrderResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse updateOrderStatus(Integer orderId, Integer statusId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng"));
+                
+        OrderStatus newStatus = orderStatusRepository.findById(statusId)
+                .orElseThrow(() -> new RuntimeException("Trạng thái không hợp lệ"));
+                
+        order.setStatus(newStatus);
+        orderRepository.save(order);
+        
+        return mapToOrderResponse(order);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse verifyPayment(Integer orderId, String paymentStatus) {
+        Payment payment = paymentRepository.findByOrder_OrderId(orderId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin thanh toán của đơn hàng này"));
+                
+        payment.setPaymentStatus(paymentStatus); // Cập nhật thành PAID hoặc FAILED
+        paymentRepository.save(payment);
+        
+        return mapToOrderResponse(payment.getOrder());
+    }
+
+    // Hàm hỗ trợ map Order sang OrderResponse (Tái sử dụng cho code gọn)
+    private OrderResponse mapToOrderResponse(Order order) {
+        String paymentStatus = "N/A";
+        var paymentOpt = paymentRepository.findByOrder_OrderId(order.getOrderId());
+        if (paymentOpt.isPresent()) {
+            paymentStatus = paymentOpt.get().getPaymentStatus();
+        }
+
+        Address address = order.getAddress();
+        String fullAddress = address.getStreet() + ", " + address.getWard() + 
+                             ", " + address.getDistrict() + ", " + address.getProvince();
+
+        return OrderResponse.builder()
+                .orderId(order.getOrderId())
+                .orderCode(order.getOrderCode())
+                .status(order.getStatus().getStatusName())
+                .paymentMethod(order.getPaymentMethod().getMethodName())
+                .paymentStatus(paymentStatus)
+                .subtotal(order.getSubtotal())
+                .discount(order.getDiscount())
+                .shippingFee(order.getShippingFee())
+                .total(order.getTotal())
+                .receiverName(address.getReceiverName())
+                .receiverPhone(address.getReceiverPhone())
+                .shippingAddress(fullAddress)
+                .note(order.getNote())
+                .createdAt(order.getCreatedAt())
+                .build();
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\ProductServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/ProductServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.swt301.ecommerce.dto.request.ProductRequest;
+import com.swt301.ecommerce.dto.response.ProductResponse;
+import com.swt301.ecommerce.entity.Category;
+import com.swt301.ecommerce.entity.Product;
+import com.swt301.ecommerce.repository.CategoryRepository;
+import com.swt301.ecommerce.repository.ProductRepository;
+import com.swt301.ecommerce.service.ProductService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class ProductServiceImpl implements ProductService {
+
+    private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
+
+    @Override
+    public List<ProductResponse> getAllProducts() {
+        return productRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public ProductResponse getProductById(Integer id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
+        return mapToResponse(product);
+    }
+
+    @Override
+    public ProductResponse createProduct(ProductRequest request) {
+        Category category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy danh mục"));
+
+        Product product = Product.builder()
+                .category(category)
+                .productName(request.getProductName())
+                .description(request.getDescription())
+                .price(request.getPrice())
+                .stock(request.getStock())
+                .image(request.getImage())
+                .build();
+
+        return mapToResponse(productRepository.save(product));
+    }
+
+    @Override
+    public ProductResponse updateProduct(Integer id, ProductRequest request) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
+
+        Category category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy danh mục"));
+
+        product.setCategory(category);
+        product.setProductName(request.getProductName());
+        product.setDescription(request.getDescription());
+        product.setPrice(request.getPrice());
+        product.setStock(request.getStock());
+        product.setImage(request.getImage());
+
+        return mapToResponse(productRepository.save(product));
+    }
+
+    @Override
+    public void deleteProduct(Integer id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
+        productRepository.delete(product);
+    }
+
+    // Hàm hỗ trợ chuyển đổi Entity -> Response
+    private ProductResponse mapToResponse(Product product) {
+        return ProductResponse.builder()
+                .productId(product.getProductId())
+                .categoryId(product.getCategory().getCategoryId())
+                .categoryName(product.getCategory().getCategoryName())
+                .productName(product.getProductName())
+                .description(product.getDescription())
+                .price(product.getPrice())
+                .stock(product.getStock())
+                .image(product.getImage())
+                .build();
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\java\com\swt301\ecommerce\service\impl\VoucherServiceImpl.java ===== 
+// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/VoucherServiceImpl.java
+package com.swt301.ecommerce.service.impl;
+
+import com.swt301.ecommerce.dto.response.VoucherResponse;
+import com.swt301.ecommerce.entity.Voucher;
+import com.swt301.ecommerce.repository.VoucherRepository;
+import com.swt301.ecommerce.service.VoucherService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Service
+@RequiredArgsConstructor
+public class VoucherServiceImpl implements VoucherService {
+
+    private final VoucherRepository voucherRepository;
+
+    @Override
+    public VoucherResponse checkVoucher(String code, BigDecimal orderSubtotal) {
+        Voucher voucher = voucherRepository.findByVoucherCode(code)
+                .orElseThrow(() -> new RuntimeException("Mã giảm giá không tồn tại"));
+
+        if (!"ACTIVE".equalsIgnoreCase(voucher.getStatus())) {
+            throw new RuntimeException("Mã giảm giá không còn hoạt động");
+        }
+
+        if (voucher.getQuantity() != null && voucher.getQuantity() <= 0) {
+            throw new RuntimeException("Mã giảm giá đã hết lượt sử dụng");
+        }
+
+        if (voucher.getExpiredDate() != null && voucher.getExpiredDate().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Mã giảm giá đã hết hạn");
+        }
+
+        if (voucher.getMinOrder() != null && orderSubtotal.compareTo(voucher.getMinOrder()) < 0) {
+            throw new RuntimeException("Đơn hàng chưa đạt giá trị tối thiểu (" + voucher.getMinOrder() + "đ)");
+        }
+
+        return VoucherResponse.builder()
+                .voucherId(voucher.getVoucherId())
+                .voucherCode(voucher.getVoucherCode())
+                .voucherName(voucher.getVoucherName())
+                .discountType(voucher.getDiscountType())
+                .discountValue(voucher.getDiscountValue())
+                .minOrder(voucher.getMinOrder())
+                .build();
+    }
+} 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\main\resources\application.yml ===== 
+server:
+  port: 8080 # Cổng mặc định của Backend
+
+ecommerce:
+  app:
+    jwtSecret: NGVwYjN6YzhxMnB4OXU1aWp2bThkaWZrNnBoMmduOHltdmwycTM4ajYxazA # ${JWT_SECRET}
+    jwtExpirationMs: 86400000
+    googleClientId: 351530225339-5iq6pdi3mdt1fjje0krodp07e18jmi19.apps.googleusercontent.com # ${GOOGLE_CLIENT_ID}
+
+cloudinary:
+  cloud-name: dt1stlhqc # ${CLOUDINARY_CLOUD_NAME}
+  api-key: 912788441748564 # ${CLOUDINARY_API_KEY}
+  api-secret: dmTXCWvYWMKHZgsQPvirbywk8Ps # ${CLOUDINARY_API_SECRET}
+
+spring:
+  datasource:
+    # Đường link kết nối trực tiếp đến máy chủ Supabase
+    url: jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?user=postgres.lxzgocsjecrvkcubkmmd&password=Haibara1808%23
+    username: postgres.lxzgocsjecrvkcubkmmd
+    password: Haibara1808%23
+    driver-class-name: org.postgresql.Driver
+
+    hikari:
+      maximum-pool-size: 5    # Chỉ cho phép tối đa 5 kết nối đồng thời (Nhỏ hơn giới hạn 15 của Supabase)
+      minimum-idle: 1         # Chỉ giữ 1 kết nối chạy ngầm khi không có ai dùng
+      idle-timeout: 300000    # Đóng kết nối nếu không dùng sau 5 phút (300,000 ms)
+      connection-timeout: 20000 # Thời gian chờ tối đa để lấy kết nối là 20s
+      
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        # Ép Hibernate chuyển sang nói ngôn ngữ PostgreSQL
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        '[format_sql]': true
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: lehoangem06092006 # ${MAIL_USERNAME}
+    password: qpjn foac zvqn goma # ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+  # Cấu hình giới hạn dung lượng file upload (Cho tính năng Upload trang truyện Manga)
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB 
+ 
+===== C:\Users\Gigabyte\Desktop\SWT301_Final Project\ecommerce\src\test\java\com\swt301\ecommerce\EcommerceApplicationTests.java ===== 
+package com.swt301.ecommerce;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class EcommerceApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}

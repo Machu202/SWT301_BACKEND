@@ -1,0 +1,25 @@
+# Bỏ qua file chứa mật khẩu cục bộ
+.env
+
+# Thư mục build của Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+
+# File tạm của IDE (IntelliJ, VS Code, Eclipse)
+.idea/
+*.iml
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+
+# File log
+*.log
+
+# Bỏ qua thư mục hệ điều hành
+.DS_Store
+Thumbs.db
