@@ -219,7 +219,7 @@ public class OrderServiceImpl implements OrderService {
         cartItemRepository.deleteAll(cartItems);
         cart.getCartItems().clear();
 
-        return mapToOrderResponse(order, paymentStatus);
+        return mapToOrderResponse(order);
     }
 
     @Override
@@ -317,7 +317,7 @@ public class OrderServiceImpl implements OrderService {
         payment.setPaymentStatus(normalizedStatus);
         payment.setPaymentDate("PAID".equals(normalizedStatus) ? LocalDateTime.now() : null);
         paymentRepository.save(payment);
-        return mapToOrderResponse(payment.getOrder(), normalizedStatus);
+        return mapToOrderResponse(payment.getOrder());
     }
 
     private Order findOwnedOrder(Integer orderId, Integer userId) {
@@ -330,12 +330,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderResponse mapToOrderResponse(Order order) {
-        String paymentStatus = paymentRepository.findByOrder_OrderId(order.getOrderId())
-                .map(Payment::getPaymentStatus).orElse("N/A");
-        return mapToOrderResponse(order, paymentStatus);
-    }
-
-    private OrderResponse mapToOrderResponse(Order order, String paymentStatus) {
+        Payment payment = paymentRepository.findByOrder_OrderId(order.getOrderId()).orElse(null);
+        String paymentStatus = payment != null ? payment.getPaymentStatus() : "N/A";
+        String receiptUrl = payment != null ? payment.getQrImage() : null;
         Address address = order.getAddress();
         String fullAddress = address.getStreet() + ", " + address.getWard()
                 + ", " + address.getDistrict() + ", " + address.getProvince();
@@ -345,6 +342,8 @@ public class OrderServiceImpl implements OrderService {
                 .status(order.getStatus().getStatusName())
                 .paymentMethod(order.getPaymentMethod().getMethodName())
                 .paymentStatus(paymentStatus)
+                .voucherCode(order.getVoucher() != null ? order.getVoucher().getVoucherCode() : null)
+                .receiptUrl(receiptUrl)
                 .subtotal(order.getSubtotal())
                 .discount(order.getDiscount())
                 .shippingFee(order.getShippingFee())
@@ -356,4 +355,5 @@ public class OrderServiceImpl implements OrderService {
                 .createdAt(order.getCreatedAt())
                 .build();
     }
+
 }

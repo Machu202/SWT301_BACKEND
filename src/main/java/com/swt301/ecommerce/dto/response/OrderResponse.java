@@ -16,8 +16,10 @@ public class OrderResponse {
     private String orderCode;
     private String status;
     private String paymentMethod;
-    private String paymentStatus; 
-    
+    private String paymentStatus;
+    private String voucherCode;
+    private String receiptUrl;
+
     private BigDecimal subtotal;
     private BigDecimal discount;
     private BigDecimal shippingFee;
