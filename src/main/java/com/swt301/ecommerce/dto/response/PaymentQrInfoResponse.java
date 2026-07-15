@@ -15,5 +15,9 @@ public class PaymentQrInfoResponse {
     private BigDecimal amount;
     private String currency;
     private String paymentStatus;
-    private String qrContent;
+    private String transferNote;
+    private String bankId;
+    private String bankName;
+    private String accountName;
+    private String accountNumber;
 }

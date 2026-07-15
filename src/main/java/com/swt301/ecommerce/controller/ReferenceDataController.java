@@ -1,7 +1,9 @@
 package com.swt301.ecommerce.controller;
 
+import com.swt301.ecommerce.dto.response.CategoryResponse;
 import com.swt301.ecommerce.dto.response.OrderStatusResponse;
 import com.swt301.ecommerce.dto.response.PaymentMethodResponse;
+import com.swt301.ecommerce.repository.CategoryRepository;
 import com.swt301.ecommerce.repository.OrderStatusRepository;
 import com.swt301.ecommerce.repository.PaymentMethodRepository;
 import com.swt301.ecommerce.util.PaymentMethodUtils;
@@ -23,7 +25,22 @@ import java.util.Map;
 public class ReferenceDataController {
 
     private final PaymentMethodRepository paymentMethodRepository;
+    private final CategoryRepository categoryRepository;
     private final OrderStatusRepository orderStatusRepository;
+
+
+    @GetMapping("/categories")
+    public ResponseEntity<List<CategoryResponse>> getCategories() {
+        List<CategoryResponse> categories = categoryRepository
+                .findAll(Sort.by(Sort.Direction.ASC, "categoryName"))
+                .stream()
+                .map(category -> CategoryResponse.builder()
+                        .categoryId(category.getCategoryId())
+                        .categoryName(category.getCategoryName())
+                        .build())
+                .toList();
+        return ResponseEntity.ok(categories);
+    }
 
     @GetMapping("/payment-methods")
     @PreAuthorize("hasAnyRole('CUSTOMER','ADMIN')")

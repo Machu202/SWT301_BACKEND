@@ -1,4 +1,3 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/OrderResponse.java
 package com.swt301.ecommerce.dto.response;
 
 import lombok.Builder;
@@ -20,17 +19,20 @@ public class OrderResponse {
     private String paymentMethod;
     private String paymentStatus;
     private String voucherCode;
-    private String receiptUrl;
+    private boolean hasReceipt;
+    private LocalDateTime receiptUploadedAt;
+    private LocalDateTime paymentVerifiedAt;
 
     private BigDecimal subtotal;
     private BigDecimal discount;
     private BigDecimal shippingFee;
     private BigDecimal total;
-    
+
     private String receiverName;
     private String receiverPhone;
-    private String shippingAddress; 
-    
+    private String shippingAddress;
+
+    private List<OrderItemResponse> items;
     private String note;
     private LocalDateTime createdAt;
 }

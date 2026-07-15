@@ -1,15 +1,16 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/security/JwtUtils.java
 package com.swt301.ecommerce.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
 
@@ -17,35 +18,45 @@ import java.util.Date;
 public class JwtUtils {
     private static final Logger logger = LoggerFactory.getLogger(JwtUtils.class);
 
-    @Value("${jwt.secret:MotChuoiBiMatSieuDaiVaPhucTapDeBaoMatHon256BitsNhe}")
+    @Value("${ecommerce.app.jwtSecret}")
     private String jwtSecret;
 
-    @Value("${jwt.expirationMs:86400000}") // 24h
-    private int jwtExpirationMs;
+    @Value("${ecommerce.app.jwtExpirationMs}")
+    private long jwtExpirationMs;
+
+    @PostConstruct
+    void validateConfiguration() {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException("JWT_SECRET is required");
+        }
+        if (secretBytes().length < 32) {
+            throw new IllegalStateException("JWT_SECRET must contain at least 32 bytes");
+        }
+        if (jwtExpirationMs <= 0) {
+            throw new IllegalStateException("JWT_EXPIRATION_MS must be greater than zero");
+        }
+    }
 
     public String generateJwtToken(Authentication authentication) {
-        UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
-
+        UserDetailsImpl principal = (UserDetailsImpl) authentication.getPrincipal();
+        Date now = new Date();
         return Jwts.builder()
-                .setSubject((userPrincipal.getUsername()))
-                .setIssuedAt(new Date())
-                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .setSubject(principal.getUsername())
+                .setIssuedAt(now)
+                .setExpiration(new Date(now.getTime() + jwtExpirationMs))
                 .signWith(key(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     private Key key() {
-        // Truyền thẳng mảng byte[] vào hàm tạo Key
-        return Keys.hmacShaKeyFor(tryGetBase64Secret());
+        return Keys.hmacShaKeyFor(secretBytes());
     }
-    
-    private byte[] tryGetBase64Secret() {
+
+    private byte[] secretBytes() {
         try {
-            // Thử giải mã nếu chuỗi secret của bạn trong application.yml là dạng Base64
             return Decoders.BASE64.decode(jwtSecret);
-        } catch (Exception e) {
-            // Nếu không phải dạng Base64 thì cứ lấy mảng byte bình thường
-            return jwtSecret.getBytes();
+        } catch (Exception ignored) {
+            return jwtSecret.getBytes(StandardCharsets.UTF_8);
         }
     }
 
@@ -56,16 +67,16 @@ public class JwtUtils {
 
     public boolean validateJwtToken(String authToken) {
         try {
-            Jwts.parserBuilder().setSigningKey(key()).build().parse(authToken);
+            Jwts.parserBuilder().setSigningKey(key()).build().parseClaimsJws(authToken);
             return true;
         } catch (MalformedJwtException e) {
-            logger.error("Invalid JWT token: {}", e.getMessage());
+            logger.warn("Invalid JWT token");
         } catch (ExpiredJwtException e) {
-            logger.error("JWT token is expired: {}", e.getMessage());
+            logger.info("JWT token expired");
         } catch (UnsupportedJwtException e) {
-            logger.error("JWT token is unsupported: {}", e.getMessage());
+            logger.warn("JWT token unsupported");
         } catch (IllegalArgumentException e) {
-            logger.error("JWT claims string is empty: {}", e.getMessage());
+            logger.warn("JWT claims are empty");
         }
         return false;
     }

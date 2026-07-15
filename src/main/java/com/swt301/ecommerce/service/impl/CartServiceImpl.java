@@ -1,4 +1,3 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
 package com.swt301.ecommerce.service.impl;
 
 import com.swt301.ecommerce.dto.request.CartItemRequest;
@@ -7,6 +6,7 @@ import com.swt301.ecommerce.entity.Cart;
 import com.swt301.ecommerce.entity.CartItem;
 import com.swt301.ecommerce.entity.Product;
 import com.swt301.ecommerce.entity.User;
+import com.swt301.ecommerce.enums.ProductStatus;
 import com.swt301.ecommerce.exception.BusinessRuleException;
 import com.swt301.ecommerce.exception.ResourceNotFoundException;
 import com.swt301.ecommerce.repository.CartItemRepository;
@@ -22,21 +22,19 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class CartServiceImpl implements CartService {
-
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
 
     @Override
+    @Transactional(readOnly = true)
     public CartResponse getCart(Integer userId) {
-        Cart cart = getOrCreateCart(userId);
-        return mapToCartResponse(cart);
+        return mapToCartResponse(getOrCreateCart(userId));
     }
 
     @Override
@@ -45,6 +43,7 @@ public class CartServiceImpl implements CartService {
         Cart cart = getOrCreateCart(userId);
         Product product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm không tồn tại"));
+        ensurePurchasable(product);
 
         Optional<CartItem> existingItem = cartItemRepository.findByCart_CartIdAndProduct_ProductId(
                 cart.getCartId(), product.getProductId());
@@ -54,30 +53,22 @@ public class CartServiceImpl implements CartService {
             throw new BusinessRuleException("Tổng số lượng trong giỏ không được vượt quá tồn kho hiện tại: " + product.getStock());
         }
 
-        // Trích đoạn file: src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
-
         if (existingItem.isPresent()) {
-            // Đã có trong giỏ -> Cộng dồn
             CartItem item = existingItem.get();
-            item.setQuantity(item.getQuantity() + request.getQuantity());
+            item.setQuantity(requestedTotal);
+            item.setUnitPrice(product.getPrice());
             cartItemRepository.save(item);
         } else {
-            // Chưa có -> Tạo mới
             CartItem newItem = CartItem.builder()
                     .cart(cart)
                     .product(product)
                     .quantity(request.getQuantity())
-                    .unitPrice(product.getPrice()) 
+                    .unitPrice(product.getPrice())
                     .build();
             cartItemRepository.save(newItem);
-            
-            // 👉 THÊM DÒNG NÀY: Đồng bộ vào bộ nhớ RAM của Hibernate
-            cart.getCartItems().add(newItem); 
+            cart.getCartItems().add(newItem);
         }
-
-        return mapToCartResponse(cart); // Không cần gọi lại getOrCreateCart() nữa cho nhẹ máy
-
-        
+        return mapToCartResponse(cart);
     }
 
     @Override
@@ -86,15 +77,15 @@ public class CartServiceImpl implements CartService {
         Cart cart = getOrCreateCart(userId);
         CartItem item = cartItemRepository.findByCart_CartIdAndProduct_ProductId(cart.getCartId(), request.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm không có trong giỏ hàng"));
-
-        if (item.getProduct().getStock() < request.getQuantity()) {
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm không tồn tại"));
+        ensurePurchasable(product);
+        if (product.getStock() < request.getQuantity()) {
             throw new BusinessRuleException("Số lượng sản phẩm trong kho không đủ");
         }
-
-        // Sửa số lượng (ghi đè, không cộng dồn)
         item.setQuantity(request.getQuantity());
+        item.setUnitPrice(product.getPrice());
         cartItemRepository.save(item);
-
         return mapToCartResponse(cart);
     }
 
@@ -103,56 +94,62 @@ public class CartServiceImpl implements CartService {
     public CartResponse removeCartItem(Integer userId, Integer cartItemId) {
         CartItem item = cartItemRepository.findById(cartItemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm trong giỏ"));
-
         if (!item.getCart().getUser().getUserId().equals(userId)) {
             throw new AccessDeniedException("Bạn không có quyền xóa sản phẩm này");
         }
-
-        Cart cart = item.getCart(); // Lấy giỏ hàng hiện tại
+        Cart cart = item.getCart();
         cartItemRepository.delete(item);
-        
-        // 👉 THÊM DÒNG NÀY: Xóa khỏi RAM để kết quả trả về không bị dính cục cũ
         cart.getCartItems().remove(item);
-
         return mapToCartResponse(cart);
     }
 
-    // --- INTERNAL METHODS ---
+    @Override
+    @Transactional
+    public CartResponse clearCart(Integer userId) {
+        Cart cart = getOrCreateCart(userId);
+        cartItemRepository.deleteByCart_CartId(cart.getCartId());
+        cart.getCartItems().clear();
+        return mapToCartResponse(cart);
+    }
+
     private Cart getOrCreateCart(Integer userId) {
         return cartRepository.findByUser_UserId(userId).orElseGet(() -> {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy user"));
-            Cart newCart = Cart.builder().user(user).build();
-            return cartRepository.save(newCart);
+            return cartRepository.save(Cart.builder().user(user).build());
         });
     }
 
+    private void ensurePurchasable(Product product) {
+        if (product.getStatus() != ProductStatus.ACTIVE) {
+            throw new BusinessRuleException("Sản phẩm hiện không còn được bán");
+        }
+    }
+
     private CartResponse mapToCartResponse(Cart cart) {
-        BigDecimal totalCartPrice = BigDecimal.ZERO;
-        
         List<CartResponse.CartItemDto> itemDtos = cart.getCartItems().stream().map(item -> {
-            BigDecimal subtotal = item.getUnitPrice().multiply(new BigDecimal(item.getQuantity()));
+            Product product = item.getProduct();
+            BigDecimal currentUnitPrice = product.getPrice();
+            BigDecimal subtotal = currentUnitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
             return CartResponse.CartItemDto.builder()
                     .cartItemId(item.getCartItemId())
-                    .productId(item.getProduct().getProductId())
-                    .productName(item.getProduct().getProductName())
-                    .productImage(item.getProduct().getImage())
+                    .productId(product.getProductId())
+                    .productName(product.getProductName())
+                    .productImage(product.getImage())
                     .quantity(item.getQuantity())
-                    .productStock(item.getProduct().getStock())
-                    .availableToAdd(Math.max(0, item.getProduct().getStock() - item.getQuantity()))
-                    .unitPrice(item.getUnitPrice())
+                    .productStock(product.getStock())
+                    .availableToAdd(Math.max(0, product.getStock() - item.getQuantity()))
+                    .unitPrice(currentUnitPrice)
                     .itemSubtotal(subtotal)
                     .build();
-        }).collect(Collectors.toList());
-
-        for (CartResponse.CartItemDto dto : itemDtos) {
-            totalCartPrice = totalCartPrice.add(dto.getItemSubtotal());
-        }
-
+        }).toList();
+        BigDecimal total = itemDtos.stream()
+                .map(CartResponse.CartItemDto::getItemSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         return CartResponse.builder()
                 .cartId(cart.getCartId())
                 .items(itemDtos)
-                .totalCartPrice(totalCartPrice)
+                .totalCartPrice(total)
                 .build();
     }
 }

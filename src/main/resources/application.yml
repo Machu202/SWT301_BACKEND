@@ -1,43 +1,44 @@
 server:
-  port: 8080 # Cổng mặc định của Backend
+  port: ${SERVER_PORT:8080}
 
 ecommerce:
   app:
-    jwtSecret: NGVwYjN6YzhxMnB4OXU1aWp2bThkaWZrNnBoMmduOHltdmwycTM4ajYxazA
-    jwtExpirationMs: 86400000
+    # Required. Supply at least 32 random bytes, preferably Base64 encoded.
+    jwtSecret: ${JWT_SECRET}
+    jwtExpirationMs: ${JWT_EXPIRATION_MS:86400000}
+  payment:
+    bank-id: ${PAYMENT_BANK_ID}
+    bank-name: ${PAYMENT_BANK_NAME}
+    account-number: ${PAYMENT_ACCOUNT_NUMBER}
+    account-name: ${PAYMENT_ACCOUNT_NAME}
+    qr-template: ${PAYMENT_QR_TEMPLATE:compact2}
+    viet-qr-image-base-url: ${VIETQR_IMAGE_BASE_URL:https://img.vietqr.io/image}
 
 cloudinary:
-  cloud-name: v1wlw369
-  api-key: 121559934927727
-  api-secret: uRRxbAPacR482odVkq63vBl5jCc
+  cloud-name: ${CLOUDINARY_CLOUD_NAME}
+  api-key: ${CLOUDINARY_API_KEY}
+  api-secret: ${CLOUDINARY_API_SECRET}
 
 spring:
   datasource:
-    # Đường link kết nối trực tiếp đến máy chủ Supabase
-    url: jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?user=postgres.lxzgocsjecrvkcubkmmd&password=Haibara1808%23
-    username: postgres.lxzgocsjecrvkcubkmmd
-    password: Haibara1808#
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
-
     hikari:
-      maximum-pool-size: 5    # Chỉ cho phép tối đa 5 kết nối đồng thời (Nhỏ hơn giới hạn 15 của Supabase)
-      minimum-idle: 1         # Chỉ giữ 1 kết nối chạy ngầm khi không có ai dùng
-      idle-timeout: 300000    # Đóng kết nối nếu không dùng sau 5 phút (300,000 ms)
-      connection-timeout: 20000 # Thời gian chờ tối đa để lấy kết nối là 20s
-      
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: ${DB_POOL_MIN:1}
+      idle-timeout: 300000
+      connection-timeout: 20000
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: ${JPA_SHOW_SQL:false}
     properties:
       hibernate:
-        # Ép Hibernate chuyển sang nói ngôn ngữ PostgreSQL
         dialect: org.hibernate.dialect.PostgreSQLDialect
         '[format_sql]': true
-
-
-
-  # Cấu hình giới hạn dung lượng file upload 
+        default_batch_fetch_size: 50
   servlet:
     multipart:
       max-file-size: 5MB

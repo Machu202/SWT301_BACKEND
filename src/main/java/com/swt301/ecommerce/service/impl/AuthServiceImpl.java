@@ -71,7 +71,8 @@ public class AuthServiceImpl implements AuthService {
         if (userRepository.existsByUsername(request.getUsername().trim())) {
             throw new ConflictException("Username đã được sử dụng");
         }
-        if (userRepository.existsByEmail(request.getEmail().trim())) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new ConflictException("Email đã được sử dụng");
         }
 
@@ -87,7 +88,7 @@ public class AuthServiceImpl implements AuthService {
         User user = User.builder()
                 .username(request.getUsername().trim())
                 .passwordHash(encoder.encode(request.getPassword()))
-                .email(request.getEmail().trim())
+                .email(normalizedEmail)
                 .fullName(request.getFullName().trim())
                 .phone(normalizedPhone)
                 .role(userRole)

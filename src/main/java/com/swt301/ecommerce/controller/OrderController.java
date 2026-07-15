@@ -3,8 +3,8 @@ package com.swt301.ecommerce.controller;
 import com.swt301.ecommerce.dto.request.CheckoutRequest;
 import com.swt301.ecommerce.dto.response.OrderResponse;
 import com.swt301.ecommerce.dto.response.OrderSummaryResponse;
-import com.swt301.ecommerce.exception.BadRequestException;
-import com.swt301.ecommerce.exception.PayloadTooLargeException;
+import com.swt301.ecommerce.dto.response.PagedResponse;
+import com.swt301.ecommerce.dto.response.UploadedAsset;
 import com.swt301.ecommerce.security.UserDetailsImpl;
 import com.swt301.ecommerce.service.FileUploadService;
 import com.swt301.ecommerce.service.OrderService;
@@ -13,14 +13,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -29,9 +24,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
-@org.springframework.security.access.prepost.PreAuthorize("hasRole('CUSTOMER')")
+@PreAuthorize("hasRole('CUSTOMER')")
 public class OrderController {
-
     private final OrderService orderService;
     private final FileUploadService fileUploadService;
 
@@ -45,8 +39,9 @@ public class OrderController {
     @PostMapping("/checkout")
     public ResponseEntity<OrderResponse> createOrder(
             @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CheckoutRequest request) {
-        return ResponseEntity.ok(orderService.createOrder(currentUser.getId(), request));
+        return ResponseEntity.ok(orderService.createOrder(currentUser.getId(), request, idempotencyKey));
     }
 
     @GetMapping("/{orderId}/payment/qr-info")
@@ -60,10 +55,7 @@ public class OrderController {
     public ResponseEntity<byte[]> getPaymentQrCode(
             @PathVariable Integer orderId,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.noStore())
-                .contentType(MediaType.IMAGE_PNG)
-                .body(orderService.generatePaymentQrCode(orderId, currentUser.getId()));
+        return imageResponse(orderService.generatePaymentQrCode(orderId, currentUser.getId()));
     }
 
     @PostMapping(value = "/{orderId}/payment/qr", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -71,30 +63,51 @@ public class OrderController {
             @PathVariable Integer orderId,
             @AuthenticationPrincipal UserDetailsImpl currentUser,
             @RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new BadRequestException("Vui lòng chọn file ảnh");
-        }
-        if (file.getSize() > 5 * 1024 * 1024) {
-            throw new PayloadTooLargeException("Kích thước ảnh không được vượt quá 5MB");
-        }
-        String contentType = file.getContentType();
-        if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-            throw new BadRequestException("Chỉ chấp nhận file định dạng JPG hoặc PNG");
-        }
-
-        // Validate order existence, ownership, payment method and state before sending bytes to Cloudinary.
+        // Ownership and workflow checks are deliberately performed before Cloudinary receives the file.
         orderService.validatePaymentReceiptUpload(orderId, currentUser.getId());
-        String imageUrl = fileUploadService.uploadImage(file);
-        orderService.updatePaymentQrImage(orderId, currentUser.getId(), imageUrl);
+        UploadedAsset asset = fileUploadService.uploadReceiptImage(file);
+        try {
+            orderService.updatePaymentReceipt(orderId, currentUser.getId(), asset);
+        } catch (RuntimeException ex) {
+            fileUploadService.deleteReceiptImage(asset.getPublicId(), asset.getSecureUrl());
+            throw ex;
+        }
         return ResponseEntity.ok(Map.of(
                 "message", "Tải biên lai thành công. Đang chờ Admin xác minh",
-                "qrUrl", imageUrl
+                "hasReceipt", true
         ));
     }
 
+    @GetMapping(value = "/{orderId}/payment/receipt", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> getReceipt(
+            @PathVariable Integer orderId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header("Content-Security-Policy", "default-src 'none'")
+                .body(orderService.getCustomerReceipt(orderId, currentUser.getId()));
+    }
+
+    /** Backward-compatible capped list (maximum 100). Prefer /page for UI rendering. */
     @GetMapping
     public ResponseEntity<List<OrderResponse>> getMyOrders(
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
         return ResponseEntity.ok(orderService.getUserOrders(currentUser.getId()));
+    }
+
+    @GetMapping("/page")
+    public ResponseEntity<PagedResponse<OrderResponse>> getMyOrdersPage(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(orderService.getUserOrdersPage(currentUser.getId(), page, size));
+    }
+
+    private ResponseEntity<byte[]> imageResponse(byte[] bytes) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.IMAGE_PNG)
+                .header("Content-Security-Policy", "default-src 'none'")
+                .body(bytes);
     }
 }
