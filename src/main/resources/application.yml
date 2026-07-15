@@ -3,20 +3,20 @@ server:
 
 ecommerce:
   app:
-    jwtSecret: # ${JWT_SECRET}
+    jwtSecret: NGVwYjN6YzhxMnB4OXU1aWp2bThkaWZrNnBoMmduOHltdmwycTM4ajYxazA
     jwtExpirationMs: 86400000
 
 cloudinary:
-  cloud-name: # ${CLOUDINARY_CLOUD_NAME}
-  api-key: # ${CLOUDINARY_API_KEY}
-  api-secret: # ${CLOUDINARY_API_SECRET}
+  cloud-name: v1wlw369
+  api-key: 121559934927727
+  api-secret: uRRxbAPacR482odVkq63vBl5jCc
 
 spring:
   datasource:
     # Đường link kết nối trực tiếp đến máy chủ Supabase
-    url: # ${SPRING_DATASOURCE_URL}
-    username: # ${SPRING_DATASOURCE_USERNAME}
-    password: # ${SPRING_DATASOURCE_PASSWORD}
+    url: jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?user=postgres.lxzgocsjecrvkcubkmmd&password=Haibara1808%23
+    username: postgres.lxzgocsjecrvkcubkmmd
+    password: Haibara1808#
     driver-class-name: org.postgresql.Driver
 
     hikari:

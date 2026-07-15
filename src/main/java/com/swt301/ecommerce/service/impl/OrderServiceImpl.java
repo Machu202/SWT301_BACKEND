@@ -269,7 +269,7 @@ public class OrderServiceImpl implements OrderService {
                 
         order.setStatus(newStatus);
         orderRepository.save(order);
-        
+
         return mapToOrderResponse(order);
     }
 
