@@ -1,10 +1,5 @@
 package com.swt301.ecommerce.service.impl;
 
-import com.google.zxing.BarcodeFormat;
-import com.google.zxing.WriterException;
-import com.google.zxing.client.j2se.MatrixToImageWriter;
-import com.google.zxing.common.BitMatrix;
-import com.google.zxing.qrcode.QRCodeWriter;
 import com.swt301.ecommerce.dto.request.CheckoutRequest;
 import com.swt301.ecommerce.dto.response.CartResponse;
 import com.swt301.ecommerce.dto.response.OrderResponse;
@@ -41,8 +36,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -204,8 +199,9 @@ public class OrderServiceImpl implements OrderService {
         }
         Payment payment = paymentRepository.findByOrder_OrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin thanh toán"));
-        String qrContent = "SWT301_PAYMENT|ORDER=" + order.getOrderCode()
-                + "|AMOUNT=" + payment.getAmount().toPlainString() + "|CURRENCY=VND";
+        String qrContent = "MB | ACCOUNT=0846511618 | NAME=CAO LE ANH KHOA"
+                + " | TRANSFER_NOTE=" + order.getOrderCode()
+                + " | AMOUNT=" + payment.getAmount().toPlainString() + " VND";
         return PaymentQrInfoResponse.builder()
                 .orderId(order.getOrderId())
                 .orderCode(order.getOrderCode())
@@ -219,13 +215,16 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public byte[] generatePaymentQrCode(Integer orderId, Integer userId) {
-        PaymentQrInfoResponse info = getPaymentQrInfo(orderId, userId);
-        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            BitMatrix matrix = new QRCodeWriter().encode(info.getQrContent(), BarcodeFormat.QR_CODE, 360, 360);
-            MatrixToImageWriter.writeToStream(matrix, "PNG", output);
-            return output.toByteArray();
-        } catch (WriterException | IOException ex) {
-            throw new IllegalStateException("Không thể tạo mã QR thanh toán", ex);
+        // Keep the existing ownership and QR-payment validation before returning the configured image.
+        getPaymentQrInfo(orderId, userId);
+        try (InputStream input = OrderServiceImpl.class.getResourceAsStream(
+                "/static/payment/vietqr-payment.png")) {
+            if (input == null) {
+                throw new IllegalStateException("Không tìm thấy ảnh QR thanh toán đã cấu hình");
+            }
+            return input.readAllBytes();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Không thể đọc ảnh QR thanh toán đã cấu hình", ex);
         }
     }
 
