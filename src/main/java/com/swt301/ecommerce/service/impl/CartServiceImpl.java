@@ -43,22 +43,15 @@ public class CartServiceImpl implements CartService {
         Product product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new RuntimeException("Sản phẩm không tồn tại"));
 
-        int totalItemsInCart = cart.getCartItems().stream()
-                .mapToInt(CartItem::getQuantity)
-                .sum();
-
-        if (totalItemsInCart + request.getQuantity() > 99) {
-            throw new RuntimeException("Maximum 99 items allowed");
-        }
-        if (product.getStock() < request.getQuantity()) {
-            throw new RuntimeException("Số lượng sản phẩm trong kho không đủ");
-        }
-
         Optional<CartItem> existingItem = cartItemRepository.findByCart_CartIdAndProduct_ProductId(
                 cart.getCartId(), product.getProductId());
+        int currentQuantity = existingItem.map(CartItem::getQuantity).orElse(0);
+        int requestedTotal = currentQuantity + request.getQuantity();
+        if (requestedTotal > product.getStock()) {
+            throw new RuntimeException("Tổng số lượng trong giỏ không được vượt quá tồn kho hiện tại: " + product.getStock());
+        }
 
-        // Trích đoạn file:
-        // src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
+        // Trích đoạn file: src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
 
         if (existingItem.isPresent()) {
             // Đã có trong giỏ -> Cộng dồn
@@ -71,24 +64,24 @@ public class CartServiceImpl implements CartService {
                     .cart(cart)
                     .product(product)
                     .quantity(request.getQuantity())
-                    .unitPrice(product.getPrice())
+                    .unitPrice(product.getPrice()) 
                     .build();
             cartItemRepository.save(newItem);
-
+            
             // 👉 THÊM DÒNG NÀY: Đồng bộ vào bộ nhớ RAM của Hibernate
-            cart.getCartItems().add(newItem);
+            cart.getCartItems().add(newItem); 
         }
 
         return mapToCartResponse(cart); // Không cần gọi lại getOrCreateCart() nữa cho nhẹ máy
 
+        
     }
 
     @Override
     @Transactional
     public CartResponse updateCartItem(Integer userId, CartItemRequest request) {
         Cart cart = getOrCreateCart(userId);
-        CartItem item = cartItemRepository
-                .findByCart_CartIdAndProduct_ProductId(cart.getCartId(), request.getProductId())
+        CartItem item = cartItemRepository.findByCart_CartIdAndProduct_ProductId(cart.getCartId(), request.getProductId())
                 .orElseThrow(() -> new RuntimeException("Sản phẩm không có trong giỏ hàng"));
 
         if (item.getProduct().getStock() < request.getQuantity()) {
@@ -114,7 +107,7 @@ public class CartServiceImpl implements CartService {
 
         Cart cart = item.getCart(); // Lấy giỏ hàng hiện tại
         cartItemRepository.delete(item);
-
+        
         // 👉 THÊM DÒNG NÀY: Xóa khỏi RAM để kết quả trả về không bị dính cục cũ
         cart.getCartItems().remove(item);
 
@@ -133,7 +126,7 @@ public class CartServiceImpl implements CartService {
 
     private CartResponse mapToCartResponse(Cart cart) {
         BigDecimal totalCartPrice = BigDecimal.ZERO;
-
+        
         List<CartResponse.CartItemDto> itemDtos = cart.getCartItems().stream().map(item -> {
             BigDecimal subtotal = item.getUnitPrice().multiply(new BigDecimal(item.getQuantity()));
             return CartResponse.CartItemDto.builder()
@@ -142,6 +135,8 @@ public class CartServiceImpl implements CartService {
                     .productName(item.getProduct().getProductName())
                     .productImage(item.getProduct().getImage())
                     .quantity(item.getQuantity())
+                    .productStock(item.getProduct().getStock())
+                    .availableToAdd(Math.max(0, item.getProduct().getStock() - item.getQuantity()))
                     .unitPrice(item.getUnitPrice())
                     .itemSubtotal(subtotal)
                     .build();
