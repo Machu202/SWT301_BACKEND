@@ -20,6 +20,10 @@ import com.swt301.ecommerce.entity.Payment;
 import com.swt301.ecommerce.entity.PaymentMethod;
 import com.swt301.ecommerce.entity.Product;
 import com.swt301.ecommerce.entity.Voucher;
+import com.swt301.ecommerce.exception.BadRequestException;
+import com.swt301.ecommerce.exception.BusinessRuleException;
+import com.swt301.ecommerce.exception.ConflictException;
+import com.swt301.ecommerce.exception.ResourceNotFoundException;
 import com.swt301.ecommerce.repository.AddressRepository;
 import com.swt301.ecommerce.repository.CartItemRepository;
 import com.swt301.ecommerce.repository.CartRepository;
@@ -31,7 +35,9 @@ import com.swt301.ecommerce.repository.PaymentRepository;
 import com.swt301.ecommerce.repository.ProductRepository;
 import com.swt301.ecommerce.repository.VoucherRepository;
 import com.swt301.ecommerce.service.OrderService;
+import com.swt301.ecommerce.util.PaymentMethodUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,7 +50,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -52,8 +57,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
-    private static final Set<String> SUPPORTED_PAYMENT_METHODS = Set.of("COD", "QR_CODE");
-    private static final Set<String> ALLOWED_PAYMENT_STATUSES = Set.of("PAID", "FAILED", "PENDING_VERIFICATION");
+    private static final Map<String, List<String>> ORDER_TRANSITIONS = Map.of(
+            "PENDING", List.of("PROCESSING", "CANCELLED"),
+            "PROCESSING", List.of("SHIPPED", "CANCELLED"),
+            "SHIPPED", List.of("DELIVERED"),
+            "DELIVERED", List.of(),
+            "CANCELLED", List.of()
+    );
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -70,111 +80,58 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderSummaryResponse previewOrder(Integer userId, String voucherCode) {
         Cart cart = cartRepository.findByUser_UserId(userId)
-                .orElseThrow(() -> new RuntimeException("Giỏ hàng không tồn tại"));
-        if (cart.getCartItems().isEmpty()) {
-            throw new RuntimeException("Không có sản phẩm nào trong giỏ hàng để thanh toán");
+                .orElseThrow(() -> new ResourceNotFoundException("Giỏ hàng không tồn tại"));
+        List<CartItem> cartItems = new ArrayList<>(cart.getCartItems());
+        if (cartItems.isEmpty()) {
+            throw new BusinessRuleException("Checkout require at least one cart item");
         }
 
-        BigDecimal subtotal = BigDecimal.ZERO;
-        List<CartResponse.CartItemDto> itemDtos = cart.getCartItems().stream().map(item -> {
-            Product product = item.getProduct();
-            if (item.getQuantity() > product.getStock()) {
-                throw new RuntimeException("Sản phẩm " + product.getProductName() + " chỉ còn " + product.getStock() + " sản phẩm");
-            }
-            BigDecimal itemSub = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
-            return CartResponse.CartItemDto.builder()
-                    .cartItemId(item.getCartItemId())
-                    .productId(product.getProductId())
-                    .productName(product.getProductName())
-                    .productImage(product.getImage())
-                    .quantity(item.getQuantity())
-                    .productStock(product.getStock())
-                    .availableToAdd(Math.max(0, product.getStock() - item.getQuantity()))
-                    .unitPrice(item.getUnitPrice())
-                    .itemSubtotal(itemSub)
-                    .build();
-        }).collect(Collectors.toList());
-
-        for (CartResponse.CartItemDto dto : itemDtos) {
-            subtotal = subtotal.add(dto.getItemSubtotal());
-        }
-
-        BigDecimal discount = calculateDiscount(voucherCode, subtotal).min(subtotal);
-        BigDecimal shippingFee = subtotal.compareTo(new BigDecimal("500000")) >= 0
-                ? BigDecimal.ZERO : new BigDecimal("30000");
-        BigDecimal total = subtotal.subtract(discount).add(shippingFee).max(BigDecimal.ZERO);
-
-        return OrderSummaryResponse.builder()
-                .items(itemDtos)
-                .subtotal(subtotal)
-                .discount(discount)
-                .shippingFee(shippingFee)
-                .total(total)
-                .build();
-    }
-
-    private BigDecimal calculateDiscount(String voucherCode, BigDecimal subtotal) {
-        if (voucherCode == null || voucherCode.isBlank()) {
-            return BigDecimal.ZERO;
-        }
-        Voucher voucher = voucherRepository.findByVoucherCode(voucherCode.trim())
-                .orElseThrow(() -> new RuntimeException("Mã giảm giá không tồn tại"));
-        if (!"ACTIVE".equalsIgnoreCase(voucher.getStatus())
-                || (voucher.getQuantity() != null && voucher.getQuantity() <= 0)
-                || (voucher.getExpiredDate() != null && voucher.getExpiredDate().isBefore(LocalDateTime.now()))
-                || (voucher.getMinOrder() != null && subtotal.compareTo(voucher.getMinOrder()) < 0)) {
-            throw new RuntimeException("Mã giảm giá không hợp lệ hoặc không đủ điều kiện");
-        }
-        if ("FIXED".equalsIgnoreCase(voucher.getDiscountType())) {
-            return voucher.getDiscountValue();
-        }
-        if ("PERCENT".equalsIgnoreCase(voucher.getDiscountType())) {
-            return subtotal.multiply(voucher.getDiscountValue()).divide(new BigDecimal("100"));
-        }
-        return BigDecimal.ZERO;
+        Voucher voucher = findVoucherForPreview(voucherCode);
+        Map<Integer, Product> products = cartItems.stream().collect(Collectors.toMap(
+                item -> item.getProduct().getProductId(),
+                CartItem::getProduct,
+                (first, second) -> first
+        ));
+        return buildSummary(cartItems, products, voucher);
     }
 
     @Override
     @Transactional
     public OrderResponse createOrder(Integer userId, CheckoutRequest request) {
         Cart cart = cartRepository.findByUser_UserId(userId)
-                .orElseThrow(() -> new RuntimeException("Giỏ hàng không tồn tại"));
+                .orElseThrow(() -> new ResourceNotFoundException("Giỏ hàng không tồn tại"));
         List<CartItem> cartItems = new ArrayList<>(cart.getCartItems());
         if (cartItems.isEmpty()) {
-            throw new RuntimeException("Giỏ hàng đang trống");
+            throw new BusinessRuleException("Checkout require at least one cart item");
         }
 
         Address address = addressRepository.findByAddressIdAndUser_UserId(request.getAddressId(), userId)
-                .orElseThrow(() -> new RuntimeException("Địa chỉ giao hàng không hợp lệ"));
+                .orElseThrow(() -> new ResourceNotFoundException("Địa chỉ giao hàng không hợp lệ"));
         PaymentMethod paymentMethod = paymentMethodRepository.findById(request.getPaymentMethodId())
-                .orElseThrow(() -> new RuntimeException("Phương thức thanh toán không hợp lệ"));
-        String methodName = paymentMethod.getMethodName().trim().toUpperCase(Locale.ROOT);
-        if (!SUPPORTED_PAYMENT_METHODS.contains(methodName)) {
-            throw new RuntimeException("Hệ thống chỉ hỗ trợ COD hoặc QR_CODE");
+                .orElseThrow(() -> new ResourceNotFoundException("Phương thức thanh toán không tồn tại"));
+        String methodName = PaymentMethodUtils.canonicalName(paymentMethod.getMethodName());
+        if (!PaymentMethodUtils.isSupported(methodName)) {
+            throw new BusinessRuleException("Hệ thống chỉ hỗ trợ COD hoặc QR_CODE");
         }
         OrderStatus pendingStatus = orderStatusRepository.findByStatusName("PENDING")
-                .orElseThrow(() -> new RuntimeException("Hệ thống chưa cấu hình trạng thái PENDING"));
+                .orElseThrow(() -> new IllegalStateException("Hệ thống chưa cấu hình trạng thái PENDING"));
 
         Map<Integer, Product> lockedProducts = new HashMap<>();
         for (CartItem cartItem : cartItems) {
             Product lockedProduct = productRepository.findByIdForUpdate(cartItem.getProduct().getProductId())
-                    .orElseThrow(() -> new RuntimeException("Sản phẩm không tồn tại"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm không tồn tại"));
             if (lockedProduct.getStock() < cartItem.getQuantity()) {
-                throw new RuntimeException("Sản phẩm " + lockedProduct.getProductName()
+                throw new ConflictException("Sản phẩm " + lockedProduct.getProductName()
                         + " chỉ còn " + lockedProduct.getStock() + " sản phẩm");
             }
             lockedProducts.put(lockedProduct.getProductId(), lockedProduct);
         }
 
-        OrderSummaryResponse summary = previewOrder(userId, request.getVoucherCode());
-        Voucher appliedVoucher = null;
-        if (request.getVoucherCode() != null && !request.getVoucherCode().isBlank()) {
-            appliedVoucher = voucherRepository.findByVoucherCode(request.getVoucherCode().trim())
-                    .orElseThrow(() -> new RuntimeException("Mã giảm giá không tồn tại"));
-            if (appliedVoucher.getQuantity() != null) {
-                appliedVoucher.setQuantity(appliedVoucher.getQuantity() - 1);
-                voucherRepository.save(appliedVoucher);
-            }
+        Voucher appliedVoucher = findVoucherForCheckout(request.getVoucherCode());
+        OrderSummaryResponse summary = buildSummary(cartItems, lockedProducts, appliedVoucher);
+        if (appliedVoucher != null && appliedVoucher.getQuantity() != null) {
+            appliedVoucher.setQuantity(appliedVoucher.getQuantity() - 1);
+            voucherRepository.save(appliedVoucher);
         }
 
         String orderCode = "ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
@@ -223,19 +180,18 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public void validatePaymentReceiptUpload(Integer orderId, Integer userId) {
+        validateReceiptUploadState(orderId, userId);
+    }
+
+    @Override
     @Transactional
     public void updatePaymentQrImage(Integer orderId, Integer userId, String qrImageUrl) {
-        Order order = findOwnedOrder(orderId, userId);
-        if (!"QR_CODE".equalsIgnoreCase(order.getPaymentMethod().getMethodName())) {
-            throw new RuntimeException("Đơn COD không sử dụng biên lai QR");
-        }
-        Payment payment = paymentRepository.findByOrder_OrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin thanh toán"));
-        if ("PAID".equalsIgnoreCase(payment.getPaymentStatus())) {
-            throw new RuntimeException("Đơn hàng đã thanh toán thành công");
-        }
+        Payment payment = validateReceiptUploadState(orderId, userId);
         payment.setQrImage(qrImageUrl);
         payment.setPaymentStatus("PENDING_VERIFICATION");
+        payment.setPaymentDate(null);
         paymentRepository.save(payment);
     }
 
@@ -243,11 +199,11 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public PaymentQrInfoResponse getPaymentQrInfo(Integer orderId, Integer userId) {
         Order order = findOwnedOrder(orderId, userId);
-        if (!"QR_CODE".equalsIgnoreCase(order.getPaymentMethod().getMethodName())) {
-            throw new RuntimeException("Đơn hàng này không sử dụng thanh toán QR");
+        if (!"QR_CODE".equals(PaymentMethodUtils.canonicalName(order.getPaymentMethod().getMethodName()))) {
+            throw new BusinessRuleException("Đơn hàng này không sử dụng thanh toán QR");
         }
         Payment payment = paymentRepository.findByOrder_OrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin thanh toán"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin thanh toán"));
         String qrContent = "SWT301_PAYMENT|ORDER=" + order.getOrderCode()
                 + "|AMOUNT=" + payment.getAmount().toPlainString() + "|CURRENCY=VND";
         return PaymentQrInfoResponse.builder()
@@ -269,7 +225,7 @@ public class OrderServiceImpl implements OrderService {
             MatrixToImageWriter.writeToStream(matrix, "PNG", output);
             return output.toByteArray();
         } catch (WriterException | IOException ex) {
-            throw new RuntimeException("Không thể tạo mã QR thanh toán", ex);
+            throw new IllegalStateException("Không thể tạo mã QR thanh toán", ex);
         }
     }
 
@@ -291,10 +247,51 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderResponse updateOrderStatus(Integer orderId, Integer statusId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng"));
+        Order order = orderRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
         OrderStatus newStatus = orderStatusRepository.findById(statusId)
-                .orElseThrow(() -> new RuntimeException("Trạng thái không hợp lệ"));
+                .orElseThrow(() -> new ResourceNotFoundException("Trạng thái không hợp lệ"));
+
+        String currentName = normalizeStatus(order.getStatus().getStatusName());
+        String newName = normalizeStatus(newStatus.getStatusName());
+        if (currentName.equals(newName)) {
+            return mapToOrderResponse(order);
+        }
+
+        List<String> allowed = ORDER_TRANSITIONS.get(currentName);
+        if (allowed == null) {
+            throw new BusinessRuleException("Trạng thái hiện tại " + currentName + " chưa được cấu hình trong quy tắc chuyển trạng thái");
+        }
+        if (!allowed.contains(newName)) {
+            throw new BusinessRuleException("Không thể chuyển đơn hàng từ " + currentName + " sang " + newName);
+        }
+
+        Payment payment = paymentRepository.findByOrder_OrderId(orderId).orElse(null);
+        String paymentMethodName = PaymentMethodUtils.canonicalName(order.getPaymentMethod().getMethodName());
+        String paymentStatus = payment == null ? "" : normalizeStatus(payment.getPaymentStatus());
+
+        if ("PROCESSING".equals(newName) && "QR_CODE".equals(paymentMethodName) && !"PAID".equals(paymentStatus)) {
+            throw new BusinessRuleException("Đơn thanh toán QR phải được xác minh PAID trước khi chuyển sang PROCESSING");
+        }
+
+        if ("CANCELLED".equals(newName)) {
+            if ("PAID".equals(paymentStatus)) {
+                throw new BusinessRuleException("Không thể hủy đơn đã thanh toán nếu chưa có quy trình hoàn tiền");
+            }
+            restoreStockAndVoucher(order);
+            if (payment != null) {
+                payment.setPaymentStatus("CANCELLED");
+                payment.setPaymentDate(null);
+                paymentRepository.save(payment);
+            }
+        }
+
+        if ("DELIVERED".equals(newName) && "COD".equals(paymentMethodName) && payment != null) {
+            payment.setPaymentStatus("PAID");
+            payment.setPaymentDate(LocalDateTime.now());
+            paymentRepository.save(payment);
+        }
+
         order.setStatus(newStatus);
         return mapToOrderResponse(orderRepository.save(order));
     }
@@ -302,31 +299,163 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderResponse verifyPayment(Integer orderId, String paymentStatus) {
-        String normalizedStatus = paymentStatus == null ? "" : paymentStatus.trim().toUpperCase(Locale.ROOT);
-        if (!ALLOWED_PAYMENT_STATUSES.contains(normalizedStatus)) {
-            throw new RuntimeException("Trạng thái thanh toán chỉ được là PAID, FAILED hoặc PENDING_VERIFICATION");
+        String normalizedStatus = normalizeStatus(paymentStatus);
+        if (!List.of("PAID", "FAILED").contains(normalizedStatus)) {
+            throw new BadRequestException("Admin chỉ có thể xác minh thanh toán thành PAID hoặc FAILED");
         }
-        Payment payment = paymentRepository.findByOrder_OrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin thanh toán của đơn hàng này"));
-        if (!"QR_CODE".equalsIgnoreCase(payment.getPaymentMethod().getMethodName())) {
-            throw new RuntimeException("Chỉ thanh toán QR mới cần Admin xác minh");
+
+        Payment payment = paymentRepository.findByOrderIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin thanh toán của đơn hàng này"));
+        Order order = payment.getOrder();
+        if (!"QR_CODE".equals(PaymentMethodUtils.canonicalName(payment.getPaymentMethod().getMethodName()))) {
+            throw new BusinessRuleException("Chỉ thanh toán QR mới cần Admin xác minh");
         }
-        if ("PAID".equals(normalizedStatus) && (payment.getQrImage() == null || payment.getQrImage().isBlank())) {
-            throw new RuntimeException("Khách hàng chưa tải biên lai thanh toán");
+        if (!"PENDING".equals(normalizeStatus(order.getStatus().getStatusName()))) {
+            throw new BusinessRuleException("Chỉ có thể xác minh payment khi order đang ở trạng thái PENDING");
         }
+        if (!"PENDING_VERIFICATION".equals(normalizeStatus(payment.getPaymentStatus()))) {
+            throw new BusinessRuleException("Payment phải ở trạng thái PENDING_VERIFICATION trước khi Admin xác minh");
+        }
+        if (payment.getQrImage() == null || payment.getQrImage().isBlank()) {
+            throw new BusinessRuleException("Khách hàng chưa tải biên lai thanh toán");
+        }
+
         payment.setPaymentStatus(normalizedStatus);
         payment.setPaymentDate("PAID".equals(normalizedStatus) ? LocalDateTime.now() : null);
         paymentRepository.save(payment);
-        return mapToOrderResponse(payment.getOrder());
+        return mapToOrderResponse(order);
+    }
+
+    private OrderSummaryResponse buildSummary(
+            List<CartItem> cartItems,
+            Map<Integer, Product> products,
+            Voucher voucher) {
+        BigDecimal subtotal = BigDecimal.ZERO;
+        List<CartResponse.CartItemDto> itemDtos = new ArrayList<>();
+
+        for (CartItem item : cartItems) {
+            Product product = products.get(item.getProduct().getProductId());
+            if (product == null) {
+                throw new ResourceNotFoundException("Sản phẩm không tồn tại");
+            }
+            if (item.getQuantity() > product.getStock()) {
+                throw new ConflictException("Sản phẩm " + product.getProductName()
+                        + " chỉ còn " + product.getStock() + " sản phẩm");
+            }
+            BigDecimal itemSubtotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+            subtotal = subtotal.add(itemSubtotal);
+            itemDtos.add(CartResponse.CartItemDto.builder()
+                    .cartItemId(item.getCartItemId())
+                    .productId(product.getProductId())
+                    .productName(product.getProductName())
+                    .productImage(product.getImage())
+                    .quantity(item.getQuantity())
+                    .productStock(product.getStock())
+                    .availableToAdd(Math.max(0, product.getStock() - item.getQuantity()))
+                    .unitPrice(item.getUnitPrice())
+                    .itemSubtotal(itemSubtotal)
+                    .build());
+        }
+
+        BigDecimal discount = calculateDiscount(voucher, subtotal).min(subtotal);
+        BigDecimal shippingFee = subtotal.compareTo(new BigDecimal("500000")) >= 0
+                ? BigDecimal.ZERO : new BigDecimal("30000");
+        BigDecimal total = subtotal.subtract(discount).add(shippingFee).max(BigDecimal.ZERO);
+
+        return OrderSummaryResponse.builder()
+                .items(itemDtos)
+                .subtotal(subtotal)
+                .discount(discount)
+                .shippingFee(shippingFee)
+                .total(total)
+                .build();
+    }
+
+    private Voucher findVoucherForPreview(String voucherCode) {
+        if (voucherCode == null || voucherCode.isBlank()) {
+            return null;
+        }
+        return voucherRepository.findByVoucherCode(voucherCode.trim())
+                .orElseThrow(() -> new ResourceNotFoundException("Mã giảm giá không tồn tại"));
+    }
+
+    private Voucher findVoucherForCheckout(String voucherCode) {
+        if (voucherCode == null || voucherCode.isBlank()) {
+            return null;
+        }
+        return voucherRepository.findByVoucherCodeForUpdate(voucherCode.trim())
+                .orElseThrow(() -> new ResourceNotFoundException("Mã giảm giá không tồn tại"));
+    }
+
+    private BigDecimal calculateDiscount(Voucher voucher, BigDecimal subtotal) {
+        if (voucher == null) {
+            return BigDecimal.ZERO;
+        }
+        if (!"ACTIVE".equalsIgnoreCase(voucher.getStatus())
+                || (voucher.getQuantity() != null && voucher.getQuantity() <= 0)
+                || (voucher.getExpiredDate() != null && voucher.getExpiredDate().isBefore(LocalDateTime.now()))
+                || (voucher.getMinOrder() != null && subtotal.compareTo(voucher.getMinOrder()) < 0)) {
+            throw new BusinessRuleException("Mã giảm giá không hợp lệ hoặc không đủ điều kiện");
+        }
+        if ("FIXED".equalsIgnoreCase(voucher.getDiscountType())) {
+            return voucher.getDiscountValue() == null ? BigDecimal.ZERO : voucher.getDiscountValue();
+        }
+        if ("PERCENT".equalsIgnoreCase(voucher.getDiscountType())) {
+            BigDecimal value = voucher.getDiscountValue() == null ? BigDecimal.ZERO : voucher.getDiscountValue();
+            return subtotal.multiply(value).divide(new BigDecimal("100"));
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private Payment validateReceiptUploadState(Integer orderId, Integer userId) {
+        Order order = findOwnedOrder(orderId, userId);
+        if (!"QR_CODE".equals(PaymentMethodUtils.canonicalName(order.getPaymentMethod().getMethodName()))) {
+            throw new BusinessRuleException("Đơn COD không sử dụng biên lai QR");
+        }
+        if (!"PENDING".equals(normalizeStatus(order.getStatus().getStatusName()))) {
+            throw new BusinessRuleException("Chỉ có thể tải biên lai khi order đang ở trạng thái PENDING");
+        }
+        Payment payment = paymentRepository.findByOrder_OrderId(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin thanh toán"));
+        String currentPaymentStatus = normalizeStatus(payment.getPaymentStatus());
+        if (!List.of("AWAITING_PAYMENT", "FAILED").contains(currentPaymentStatus)) {
+            throw new BusinessRuleException("Không thể tải biên lai khi payment đang ở trạng thái " + currentPaymentStatus);
+        }
+        return payment;
+    }
+
+    private void restoreStockAndVoucher(Order order) {
+        List<OrderItem> orderItems = orderItemRepository.findByOrder_OrderId(order.getOrderId());
+        for (OrderItem item : orderItems) {
+            Product product = productRepository.findByIdForUpdate(item.getProduct().getProductId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm để hoàn tồn kho"));
+            product.setStock(product.getStock() + item.getQuantity());
+            productRepository.save(product);
+        }
+
+        if (order.getVoucher() != null && order.getVoucher().getQuantity() != null) {
+            Voucher voucher = voucherRepository.findByIdForUpdate(order.getVoucher().getVoucherId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy voucher để hoàn lượt sử dụng"));
+            voucher.setQuantity(voucher.getQuantity() + 1);
+            voucherRepository.save(voucher);
+        }
     }
 
     private Order findOwnedOrder(Integer orderId, Integer userId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
         if (!order.getUser().getUserId().equals(userId)) {
-            throw new RuntimeException("Bạn không có quyền thao tác trên đơn hàng này");
+            throw new AccessDeniedException("Bạn không có quyền thao tác trên đơn hàng này");
         }
         return order;
+    }
+
+    private List<String> allowedNextStatuses(String currentStatus) {
+        return ORDER_TRANSITIONS.getOrDefault(normalizeStatus(currentStatus), List.of());
+    }
+
+    private String normalizeStatus(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     private OrderResponse mapToOrderResponse(Order order) {
@@ -340,7 +469,8 @@ public class OrderServiceImpl implements OrderService {
                 .orderId(order.getOrderId())
                 .orderCode(order.getOrderCode())
                 .status(order.getStatus().getStatusName())
-                .paymentMethod(order.getPaymentMethod().getMethodName())
+                .allowedNextStatuses(allowedNextStatuses(order.getStatus().getStatusName()))
+                .paymentMethod(PaymentMethodUtils.canonicalName(order.getPaymentMethod().getMethodName()))
                 .paymentStatus(paymentStatus)
                 .voucherCode(order.getVoucher() != null ? order.getVoucher().getVoucherCode() : null)
                 .receiptUrl(receiptUrl)
@@ -355,5 +485,4 @@ public class OrderServiceImpl implements OrderService {
                 .createdAt(order.getCreatedAt())
                 .build();
     }
-
 }

@@ -3,6 +3,7 @@ package com.swt301.ecommerce.service.impl;
 
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
+import com.swt301.ecommerce.exception.ExternalServiceException;
 import com.swt301.ecommerce.service.FileUploadService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,7 @@ public class FileUploadServiceImpl implements FileUploadService {
             // Trả về đường link ảnh bảo mật (https)
             return uploadResult.get("secure_url").toString();
         } catch (IOException e) {
-            throw new RuntimeException("Lỗi khi tải ảnh lên server: " + e.getMessage());
+            throw new ExternalServiceException("Lỗi khi tải ảnh lên server", e);
         }
     }
     @Override
@@ -46,7 +47,7 @@ public class FileUploadServiceImpl implements FileUploadService {
             
             return uploadResult.get("secure_url").toString();
         } catch (IOException e) {
-            throw new RuntimeException("Lỗi khi tải ảnh sản phẩm: " + e.getMessage());
+            throw new ExternalServiceException("Lỗi khi tải ảnh sản phẩm", e);
         }
     }
 }

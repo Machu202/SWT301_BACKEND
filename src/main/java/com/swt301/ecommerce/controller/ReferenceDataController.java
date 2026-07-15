@@ -4,6 +4,7 @@ import com.swt301.ecommerce.dto.response.OrderStatusResponse;
 import com.swt301.ecommerce.dto.response.PaymentMethodResponse;
 import com.swt301.ecommerce.repository.OrderStatusRepository;
 import com.swt301.ecommerce.repository.PaymentMethodRepository;
+import com.swt301.ecommerce.util.PaymentMethodUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
@@ -12,16 +13,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/reference")
 @RequiredArgsConstructor
 public class ReferenceDataController {
-
-    private static final Set<String> SUPPORTED_PAYMENT_METHODS = Set.of("COD", "QR_CODE");
 
     private final PaymentMethodRepository paymentMethodRepository;
     private final OrderStatusRepository orderStatusRepository;
@@ -29,18 +28,18 @@ public class ReferenceDataController {
     @GetMapping("/payment-methods")
     @PreAuthorize("hasAnyRole('CUSTOMER','ADMIN')")
     public ResponseEntity<List<PaymentMethodResponse>> getPaymentMethods() {
-        List<PaymentMethodResponse> methods = paymentMethodRepository
-                .findAll(Sort.by(Sort.Direction.ASC, "methodName"))
+        Map<String, PaymentMethodResponse> uniqueMethods = new LinkedHashMap<>();
+        paymentMethodRepository.findAll(Sort.by(Sort.Direction.ASC, "paymentMethodId"))
                 .stream()
-                .filter(method -> method.getMethodName() != null)
-                .filter(method -> SUPPORTED_PAYMENT_METHODS.contains(
-                        method.getMethodName().trim().toUpperCase(Locale.ROOT)))
-                .map(method -> PaymentMethodResponse.builder()
-                        .paymentMethodId(method.getPaymentMethodId())
-                        .methodName(method.getMethodName())
-                        .build())
-                .toList();
-        return ResponseEntity.ok(methods);
+                .filter(method -> PaymentMethodUtils.isSupported(method.getMethodName()))
+                .forEach(method -> {
+                    String canonicalName = PaymentMethodUtils.canonicalName(method.getMethodName());
+                    uniqueMethods.putIfAbsent(canonicalName, PaymentMethodResponse.builder()
+                            .paymentMethodId(method.getPaymentMethodId())
+                            .methodName(canonicalName)
+                            .build());
+                });
+        return ResponseEntity.ok(List.copyOf(uniqueMethods.values()));
     }
 
     @GetMapping("/order-statuses")

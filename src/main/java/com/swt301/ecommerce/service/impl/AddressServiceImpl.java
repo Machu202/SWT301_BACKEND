@@ -4,6 +4,8 @@ import com.swt301.ecommerce.dto.request.AddressRequest;
 import com.swt301.ecommerce.dto.response.AddressResponse;
 import com.swt301.ecommerce.dto.response.MessageResponse;
 import com.swt301.ecommerce.entity.Address;
+import com.swt301.ecommerce.exception.ConflictException;
+import com.swt301.ecommerce.exception.ResourceNotFoundException;
 import com.swt301.ecommerce.entity.User;
 import com.swt301.ecommerce.repository.AddressRepository;
 import com.swt301.ecommerce.repository.OrderRepository;
@@ -33,7 +35,7 @@ public class AddressServiceImpl implements AddressService {
     @Transactional
     public AddressResponse createAddress(Integer userId, AddressRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng"));
 
         handleDefaultAddress(userId, request.getIsDefault());
 
@@ -55,7 +57,7 @@ public class AddressServiceImpl implements AddressService {
     @Transactional
     public AddressResponse updateAddress(Integer addressId, Integer userId, AddressRequest request) {
         Address address = addressRepository.findByAddressIdAndUser_UserId(addressId, userId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy địa chỉ hoặc bạn không có quyền sửa"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy địa chỉ hoặc bạn không có quyền sửa"));
 
         handleDefaultAddress(userId, request.getIsDefault());
 
@@ -74,9 +76,9 @@ public class AddressServiceImpl implements AddressService {
     @Transactional
     public MessageResponse deleteAddress(Integer addressId, Integer userId) {
         Address address = addressRepository.findByAddressIdAndUser_UserId(addressId, userId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy địa chỉ hoặc bạn không có quyền xóa"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy địa chỉ hoặc bạn không có quyền xóa"));
         if (orderRepository.existsByAddress_AddressId(addressId)) {
-            throw new RuntimeException("Không thể xóa địa chỉ đã được sử dụng trong đơn hàng");
+            throw new ConflictException("Không thể xóa địa chỉ đã được sử dụng trong đơn hàng");
         }
 
         boolean wasDefault = Boolean.TRUE.equals(address.getIsDefault());

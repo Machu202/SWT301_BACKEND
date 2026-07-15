@@ -10,6 +10,7 @@ import java.util.List;
 public interface OrderService {
     OrderSummaryResponse previewOrder(Integer userId, String voucherCode);
     OrderResponse createOrder(Integer userId, CheckoutRequest request);
+    void validatePaymentReceiptUpload(Integer orderId, Integer userId);
     void updatePaymentQrImage(Integer orderId, Integer userId, String qrImageUrl);
     PaymentQrInfoResponse getPaymentQrInfo(Integer orderId, Integer userId);
     byte[] generatePaymentQrCode(Integer orderId, Integer userId);

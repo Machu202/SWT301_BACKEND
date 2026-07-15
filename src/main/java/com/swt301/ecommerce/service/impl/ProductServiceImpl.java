@@ -5,6 +5,7 @@ import com.swt301.ecommerce.dto.request.ProductRequest;
 import com.swt301.ecommerce.dto.response.ProductResponse;
 import com.swt301.ecommerce.entity.Category;
 import com.swt301.ecommerce.entity.Product;
+import com.swt301.ecommerce.exception.ResourceNotFoundException;
 import com.swt301.ecommerce.repository.CategoryRepository;
 import com.swt301.ecommerce.repository.ProductRepository;
 import com.swt301.ecommerce.service.FileUploadService;
@@ -33,14 +34,14 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public ProductResponse getProductById(Integer id) {
         Product product = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm"));
         return mapToResponse(product);
     }
 
     @Override
     public ProductResponse createProduct(ProductRequest request) {
         Category category = categoryRepository.findById(request.getCategoryId())
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy danh mục"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục"));
 
         // Gọi hàm up ảnh lên Cloudinary
         String imageUrl = null;
@@ -63,10 +64,10 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public ProductResponse updateProduct(Integer id, ProductRequest request) {
         Product product = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm"));
 
         Category category = categoryRepository.findById(request.getCategoryId())
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy danh mục"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục"));
 
         // Nếu admin có chọn file ảnh mới thì up lên, không thì giữ nguyên ảnh cũ
         if (request.getImageFile() != null && !request.getImageFile().isEmpty()) {
@@ -85,7 +86,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public void deleteProduct(Integer id) {
         Product product = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm"));
         productRepository.delete(product);
     }
 

@@ -7,12 +7,15 @@ import com.swt301.ecommerce.entity.Cart;
 import com.swt301.ecommerce.entity.CartItem;
 import com.swt301.ecommerce.entity.Product;
 import com.swt301.ecommerce.entity.User;
+import com.swt301.ecommerce.exception.BusinessRuleException;
+import com.swt301.ecommerce.exception.ResourceNotFoundException;
 import com.swt301.ecommerce.repository.CartItemRepository;
 import com.swt301.ecommerce.repository.CartRepository;
 import com.swt301.ecommerce.repository.ProductRepository;
 import com.swt301.ecommerce.repository.UserRepository;
 import com.swt301.ecommerce.service.CartService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,14 +44,14 @@ public class CartServiceImpl implements CartService {
     public CartResponse addToCart(Integer userId, CartItemRequest request) {
         Cart cart = getOrCreateCart(userId);
         Product product = productRepository.findById(request.getProductId())
-                .orElseThrow(() -> new RuntimeException("Sản phẩm không tồn tại"));
+                .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm không tồn tại"));
 
         Optional<CartItem> existingItem = cartItemRepository.findByCart_CartIdAndProduct_ProductId(
                 cart.getCartId(), product.getProductId());
         int currentQuantity = existingItem.map(CartItem::getQuantity).orElse(0);
         int requestedTotal = currentQuantity + request.getQuantity();
         if (requestedTotal > product.getStock()) {
-            throw new RuntimeException("Tổng số lượng trong giỏ không được vượt quá tồn kho hiện tại: " + product.getStock());
+            throw new BusinessRuleException("Tổng số lượng trong giỏ không được vượt quá tồn kho hiện tại: " + product.getStock());
         }
 
         // Trích đoạn file: src/main/java/com/swt301/ecommerce/service/impl/CartServiceImpl.java
@@ -82,10 +85,10 @@ public class CartServiceImpl implements CartService {
     public CartResponse updateCartItem(Integer userId, CartItemRequest request) {
         Cart cart = getOrCreateCart(userId);
         CartItem item = cartItemRepository.findByCart_CartIdAndProduct_ProductId(cart.getCartId(), request.getProductId())
-                .orElseThrow(() -> new RuntimeException("Sản phẩm không có trong giỏ hàng"));
+                .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm không có trong giỏ hàng"));
 
         if (item.getProduct().getStock() < request.getQuantity()) {
-            throw new RuntimeException("Số lượng sản phẩm trong kho không đủ");
+            throw new BusinessRuleException("Số lượng sản phẩm trong kho không đủ");
         }
 
         // Sửa số lượng (ghi đè, không cộng dồn)
@@ -99,10 +102,10 @@ public class CartServiceImpl implements CartService {
     @Transactional
     public CartResponse removeCartItem(Integer userId, Integer cartItemId) {
         CartItem item = cartItemRepository.findById(cartItemId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm trong giỏ"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm trong giỏ"));
 
         if (!item.getCart().getUser().getUserId().equals(userId)) {
-            throw new RuntimeException("Bạn không có quyền xóa sản phẩm này");
+            throw new AccessDeniedException("Bạn không có quyền xóa sản phẩm này");
         }
 
         Cart cart = item.getCart(); // Lấy giỏ hàng hiện tại
@@ -118,7 +121,7 @@ public class CartServiceImpl implements CartService {
     private Cart getOrCreateCart(Integer userId) {
         return cartRepository.findByUser_UserId(userId).orElseGet(() -> {
             User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("Không tìm thấy user"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy user"));
             Cart newCart = Cart.builder().user(user).build();
             return cartRepository.save(newCart);
         });

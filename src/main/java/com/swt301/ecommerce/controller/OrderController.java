@@ -3,6 +3,8 @@ package com.swt301.ecommerce.controller;
 import com.swt301.ecommerce.dto.request.CheckoutRequest;
 import com.swt301.ecommerce.dto.response.OrderResponse;
 import com.swt301.ecommerce.dto.response.OrderSummaryResponse;
+import com.swt301.ecommerce.exception.BadRequestException;
+import com.swt301.ecommerce.exception.PayloadTooLargeException;
 import com.swt301.ecommerce.security.UserDetailsImpl;
 import com.swt301.ecommerce.service.FileUploadService;
 import com.swt301.ecommerce.service.OrderService;
@@ -70,16 +72,18 @@ public class OrderController {
             @AuthenticationPrincipal UserDetailsImpl currentUser,
             @RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
-            throw new RuntimeException("Vui lòng chọn file ảnh");
+            throw new BadRequestException("Vui lòng chọn file ảnh");
         }
         if (file.getSize() > 5 * 1024 * 1024) {
-            throw new RuntimeException("Kích thước ảnh không được vượt quá 5MB");
+            throw new PayloadTooLargeException("Kích thước ảnh không được vượt quá 5MB");
         }
         String contentType = file.getContentType();
         if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-            throw new RuntimeException("Chỉ chấp nhận file định dạng JPG hoặc PNG");
+            throw new BadRequestException("Chỉ chấp nhận file định dạng JPG hoặc PNG");
         }
 
+        // Validate order existence, ownership, payment method and state before sending bytes to Cloudinary.
+        orderService.validatePaymentReceiptUpload(orderId, currentUser.getId());
         String imageUrl = fileUploadService.uploadImage(file);
         orderService.updatePaymentQrImage(orderId, currentUser.getId(), imageUrl);
         return ResponseEntity.ok(Map.of(
