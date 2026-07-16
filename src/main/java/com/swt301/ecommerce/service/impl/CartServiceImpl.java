@@ -32,7 +32,7 @@ public class CartServiceImpl implements CartService {
     private final UserRepository userRepository;
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public CartResponse getCart(Integer userId) {
         return mapToCartResponse(getOrCreateCart(userId));
     }
@@ -121,7 +121,7 @@ public class CartServiceImpl implements CartService {
     }
 
     private void ensurePurchasable(Product product) {
-        if (product.getStatus() != ProductStatus.ACTIVE) {
+        if (product.getStatus() == null || product.getStatus() != ProductStatus.ACTIVE) {
             throw new BusinessRuleException("Sản phẩm hiện không còn được bán");
         }
     }

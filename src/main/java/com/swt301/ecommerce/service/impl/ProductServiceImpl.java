@@ -157,7 +157,7 @@ public class ProductServiceImpl implements ProductService {
                 .price(product.getPrice())
                 .stock(product.getStock())
                 .image(product.getImage())
-                .status(product.getStatus().name())
+                .status(product.getStatus() == null ? "ACTIVE" : product.getStatus().name())
                 .build();
     }
 }

@@ -39,7 +39,11 @@ public class Product {
     @Column(name = "image")
     private String image;
 
-    @Column(name = "image_public_id")
+    /**
+     * Cloudinary public ID is derived from the persisted image URL when cleanup is needed.
+     * Keep this transient so existing databases do not require a new image_public_id column.
+     */
+    @Transient
     private String imagePublicId;
 
     @Enumerated(EnumType.STRING)
