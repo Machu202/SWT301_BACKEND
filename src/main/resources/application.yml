@@ -1,41 +1,40 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: 8080
 
 ecommerce:
   app:
     # Required. Supply at least 32 random bytes, preferably Base64 encoded.
-    jwtSecret: ${JWT_SECRET}
-    jwtExpirationMs: ${JWT_EXPIRATION_MS:86400000}
+    jwtSecret: NGVwYjN6YzhxMnB4OXU1aWp2bThkaWZrNnBoMmduOHltdmwycTM4ajYxazA
+    jwtExpirationMs: 86400000
   payment:
-    bank-id: ${PAYMENT_BANK_ID}
-    bank-name: ${PAYMENT_BANK_NAME}
-    account-number: ${PAYMENT_ACCOUNT_NUMBER}
-    account-name: ${PAYMENT_ACCOUNT_NAME}
-    qr-template: ${PAYMENT_QR_TEMPLATE:compact2}
-    viet-qr-image-base-url: ${VIETQR_IMAGE_BASE_URL:https://img.vietqr.io/image}
+    bank-id: OMS_ID
+    bank-name: OMS_Bank
+    account-number: 1234567890
+    account-name: OMS_Account
+    qr-image-resource: classpath:/static/payment/vietqr-payment.png
 
 cloudinary:
-  cloud-name: ${CLOUDINARY_CLOUD_NAME}
-  api-key: ${CLOUDINARY_API_KEY}
-  api-secret: ${CLOUDINARY_API_SECRET}
+  cloud-name: v1wlw369
+  api-key: 121559934927727
+  api-secret: uRRxbAPacR482odVkq63vBl5jCc
 
 spring:
   config:
     import: optional:file:.env[.properties]
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: jdbc:postgresql://aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres?user=postgres.lxzgocsjecrvkcubkmmd&password=Haibara1808%23
+    username: postgres.lxzgocsjecrvkcubkmmd
+    password: Haibara1808#
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: ${DB_POOL_MAX:5}
-      minimum-idle: ${DB_POOL_MIN:1}
+      maximum-pool-size: 5
+      minimum-idle: 1
       idle-timeout: 300000
       connection-timeout: 20000
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: ${JPA_SHOW_SQL:false}
+    show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect

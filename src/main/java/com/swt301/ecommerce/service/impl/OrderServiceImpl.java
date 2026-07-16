@@ -1,9 +1,5 @@
 package com.swt301.ecommerce.service.impl;
 
-import com.google.zxing.BarcodeFormat;
-import com.google.zxing.common.BitMatrix;
-import com.google.zxing.client.j2se.MatrixToImageWriter;
-import com.google.zxing.qrcode.QRCodeWriter;
 import com.swt301.ecommerce.config.properties.PaymentProperties;
 import com.swt301.ecommerce.dto.request.CheckoutRequest;
 import com.swt301.ecommerce.dto.request.ManualAddressRequest;
@@ -46,22 +42,17 @@ import com.swt301.ecommerce.service.FileUploadService;
 import com.swt301.ecommerce.service.OrderService;
 import com.swt301.ecommerce.util.PaymentMethodUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.util.UriComponentsBuilder;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -99,10 +90,7 @@ public class OrderServiceImpl implements OrderService {
     private final ProductRepository productRepository;
     private final FileUploadService fileUploadService;
     private final PaymentProperties paymentProperties;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(8))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private final ResourceLoader resourceLoader;
 
     @Override
     @Transactional(readOnly = true)
@@ -255,7 +243,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public byte[] generatePaymentQrCode(Integer orderId, Integer userId) {
         PaymentQrInfoResponse info = getPaymentQrInfo(orderId, userId);
-        return generateQrBytes(info);
+        return loadConfiguredQrBytes(info);
     }
 
     @Override
@@ -285,29 +273,25 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public byte[] generateAdminPaymentQrCode(Integer orderId) {
-        return generateQrBytes(getAdminPaymentQrInfo(orderId));
+        return loadConfiguredQrBytes(getAdminPaymentQrInfo(orderId));
     }
 
-    private byte[] generateQrBytes(PaymentQrInfoResponse info) {
-        String imageUrl = UriComponentsBuilder
-                .fromUriString(paymentProperties.getVietQrImageBaseUrl())
-                .pathSegment(paymentProperties.getBankId() + "-" + paymentProperties.getAccountNumber()
-                        + "-" + paymentProperties.getQrTemplate() + ".png")
-                .queryParam("amount", info.getAmount().toPlainString())
-                .queryParam("addInfo", info.getTransferNote())
-                .queryParam("accountName", paymentProperties.getAccountName())
-                .build().encode().toUriString();
-        try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(imageUrl))
-                    .timeout(Duration.ofSeconds(10)).GET().build();
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() >= 200 && response.statusCode() < 300 && response.body().length > 100) {
-                return response.body();
-            }
-        } catch (Exception ignored) {
-            if (ignored instanceof InterruptedException) Thread.currentThread().interrupt();
+    private byte[] loadConfiguredQrBytes(PaymentQrInfoResponse info) {
+        // Authorization and QR-payment validation already happened while building info.
+        // Always return the exact project-owned MB Bank QR image configured in application.yml.
+        Resource resource = resourceLoader.getResource(paymentProperties.getQrImageResource());
+        if (!resource.exists() || !resource.isReadable()) {
+            throw new ExternalServiceException("Không tìm thấy ảnh QR thanh toán đã cấu hình");
         }
-        return generateFallbackQr(info);
+        try (var input = resource.getInputStream()) {
+            byte[] bytes = input.readAllBytes();
+            if (bytes.length < 100) {
+                throw new ExternalServiceException("Ảnh QR thanh toán đã cấu hình không hợp lệ");
+            }
+            return bytes;
+        } catch (IOException ex) {
+            throw new ExternalServiceException("Không thể đọc ảnh QR thanh toán đã cấu hình", ex);
+        }
     }
 
     @Override
@@ -539,21 +523,6 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin thanh toán"));
         if (!hasReceipt(payment)) throw new ResourceNotFoundException("Đơn hàng chưa có biên lai");
         return fileUploadService.downloadReceipt(payment.getReceiptPublicId(), payment.getQrImage());
-    }
-
-    private byte[] generateFallbackQr(PaymentQrInfoResponse info) {
-        String content = "BANK=" + info.getBankId()
-                + "|ACCOUNT=" + info.getAccountNumber()
-                + "|NAME=" + info.getAccountName()
-                + "|AMOUNT=" + info.getAmount().toPlainString()
-                + "|NOTE=" + info.getTransferNote();
-        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            BitMatrix matrix = new QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, 640, 640);
-            MatrixToImageWriter.writeToStream(matrix, "PNG", output);
-            return output.toByteArray();
-        } catch (Exception ex) {
-            throw new ExternalServiceException("Không thể tạo QR thanh toán", ex);
-        }
     }
 
     private List<OrderResponse> mapOrders(List<Order> orders) {

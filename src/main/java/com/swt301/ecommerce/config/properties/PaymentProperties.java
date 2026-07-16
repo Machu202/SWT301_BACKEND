@@ -23,6 +23,7 @@ public class PaymentProperties {
     @NotBlank
     private String accountName;
 
-    private String qrTemplate = "compact2";
-    private String vietQrImageBaseUrl = "https://img.vietqr.io/image";
+    /** Exact project-owned QR image. Never generate or substitute a different QR. */
+    @NotBlank
+    private String qrImageResource = "classpath:/static/payment/vietqr-payment.png";
 }
