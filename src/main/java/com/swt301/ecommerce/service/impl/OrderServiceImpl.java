@@ -70,7 +70,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -664,8 +664,8 @@ public class OrderServiceImpl implements OrderService {
 
     private String generateUniqueOrderCode() {
         for (int attempt = 0; attempt < ORDER_CODE_RETRIES; attempt++) {
-            String code = "ORD-" + UUID.randomUUID().toString().replace("-", "")
-                    .substring(0, 12).toUpperCase(Locale.ROOT);
+            int numericPart = ThreadLocalRandom.current().nextInt(1_000_000);
+            String code = String.format(Locale.ROOT, "ORD-%06d", numericPart);
             if (!orderRepository.existsByOrderCode(code)) return code;
         }
         throw new ConflictException("Không thể sinh mã đơn hàng duy nhất. Vui lòng thử lại");
