@@ -1,6 +1,6 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/entity/Product.java
 package com.swt301.ecommerce.entity;
 
+import com.swt301.ecommerce.enums.ProductStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -31,14 +31,23 @@ public class Product {
     private String description;
 
     @Column(name = "price", nullable = false)
-    private BigDecimal price; // Luôn dùng BigDecimal cho tiền bạc
+    private BigDecimal price;
 
     @Column(name = "stock", nullable = false)
     private Integer stock;
 
     @Column(name = "image")
     private String image;
-    @Column(name = "status")
+
+    /**
+     * Cloudinary public ID is derived from the persisted image URL when cleanup is needed.
+     * Keep this transient so existing databases do not require a new image_public_id column.
+     */
+    @Transient
+    private String imagePublicId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
     @Builder.Default
-    private String status = "ACTIVE";
+    private ProductStatus status = ProductStatus.ACTIVE;
 }

@@ -1,75 +1,113 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/controller/OrderController.java
 package com.swt301.ecommerce.controller;
 
+import com.swt301.ecommerce.dto.request.CheckoutRequest;
+import com.swt301.ecommerce.dto.response.OrderResponse;
 import com.swt301.ecommerce.dto.response.OrderSummaryResponse;
-
+import com.swt301.ecommerce.dto.response.PagedResponse;
+import com.swt301.ecommerce.dto.response.UploadedAsset;
 import com.swt301.ecommerce.security.UserDetailsImpl;
+import com.swt301.ecommerce.service.FileUploadService;
 import com.swt301.ecommerce.service.OrderService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
-@org.springframework.security.access.prepost.PreAuthorize("hasRole('CUSTOMER')")
+@PreAuthorize("hasRole('CUSTOMER')")
 public class OrderController {
-
     private final OrderService orderService;
-    private final com.swt301.ecommerce.service.FileUploadService fileUploadService;
+    private final FileUploadService fileUploadService;
 
-    // FE-11: Xem trước hóa đơn tính tiền
     @GetMapping("/preview")
     public ResponseEntity<OrderSummaryResponse> previewOrder(
             @AuthenticationPrincipal UserDetailsImpl currentUser,
             @RequestParam(value = "voucherCode", required = false) String voucherCode) {
-        
-        OrderSummaryResponse response = orderService.previewOrder(currentUser.getId(), voucherCode);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(orderService.previewOrder(currentUser.getId(), voucherCode));
     }
-    // FE-13 & FE-17: Chốt đơn hàng
+
     @PostMapping("/checkout")
-    public ResponseEntity<com.swt301.ecommerce.dto.response.OrderResponse> createOrder(
+    public ResponseEntity<OrderResponse> createOrder(
             @AuthenticationPrincipal UserDetailsImpl currentUser,
-            @jakarta.validation.Valid @RequestBody com.swt301.ecommerce.dto.request.CheckoutRequest request) {
-        
-        return ResponseEntity.ok(orderService.createOrder(currentUser.getId(), request));
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody CheckoutRequest request) {
+        return ResponseEntity.ok(orderService.createOrder(currentUser.getId(), request, idempotencyKey));
     }
-    // NHỚ THÊM DEPENDENCY NÀY VÀO ĐẦU CONTROLLER:
-    // private final com.teamproject.ecommerceapi.service.FileUploadService fileUploadService;
 
-    // 3. FE-15: Tải ảnh bill QR
-    @PostMapping(value = "/{orderId}/payment/qr", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @GetMapping("/{orderId}/payment/qr-info")
+    public ResponseEntity<?> getPaymentQrInfo(
+            @PathVariable Integer orderId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(orderService.getPaymentQrInfo(orderId, currentUser.getId()));
+    }
+
+    @GetMapping(value = "/{orderId}/payment/qr-code", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> getPaymentQrCode(
+            @PathVariable Integer orderId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return imageResponse(orderService.generatePaymentQrCode(orderId, currentUser.getId()));
+    }
+
+    @PostMapping(value = "/{orderId}/payment/qr", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadQrPayment(
-            @PathVariable("orderId") Integer orderId,
+            @PathVariable Integer orderId,
             @AuthenticationPrincipal UserDetailsImpl currentUser,
-            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
-
-        // Validate File
-        if (file.isEmpty()) throw new RuntimeException("Vui lòng chọn file ảnh");
-        if (file.getSize() > 5 * 1024 * 1024) throw new RuntimeException("Kích thước ảnh không được vượt quá 5MB");
-        
-        String contentType = file.getContentType();
-        if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-            throw new RuntimeException("Chỉ chấp nhận file định dạng JPG hoặc PNG");
+            @RequestParam("file") MultipartFile file) {
+        // Ownership and workflow checks are deliberately performed before Cloudinary receives the file.
+        orderService.validatePaymentReceiptUpload(orderId, currentUser.getId());
+        UploadedAsset asset = fileUploadService.uploadReceiptImage(file);
+        try {
+            orderService.updatePaymentReceipt(orderId, currentUser.getId(), asset);
+        } catch (RuntimeException ex) {
+            fileUploadService.deleteReceiptImage(asset.getPublicId(), asset.getSecureUrl());
+            throw ex;
         }
-
-        // Upload và lưu DB
-        String imageUrl = fileUploadService.uploadImage(file);
-        orderService.updatePaymentQrImage(orderId, currentUser.getId(), imageUrl);
-
-        return ResponseEntity.ok(java.util.Map.of(
-                "message", "Tải ảnh hóa đơn thành công",
-                "qrUrl", imageUrl
+        return ResponseEntity.ok(Map.of(
+                "message", "Tải biên lai thành công. Đang chờ Admin xác minh",
+                "hasReceipt", true
         ));
     }
 
-    // 4. FE-19: Xem lịch sử đơn hàng
-    @GetMapping
-    public ResponseEntity<java.util.List<com.swt301.ecommerce.dto.response.OrderResponse>> getMyOrders(
+    @GetMapping(value = "/{orderId}/payment/receipt", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> getReceipt(
+            @PathVariable Integer orderId,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
-        
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header("Content-Security-Policy", "default-src 'none'")
+                .body(orderService.getCustomerReceipt(orderId, currentUser.getId()));
+    }
+
+    /** Backward-compatible capped list (maximum 100). Prefer /page for UI rendering. */
+    @GetMapping
+    public ResponseEntity<List<OrderResponse>> getMyOrders(
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
         return ResponseEntity.ok(orderService.getUserOrders(currentUser.getId()));
+    }
+
+    @GetMapping("/page")
+    public ResponseEntity<PagedResponse<OrderResponse>> getMyOrdersPage(
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(orderService.getUserOrdersPage(currentUser.getId(), page, size));
+    }
+
+    private ResponseEntity<byte[]> imageResponse(byte[] bytes) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .contentType(MediaType.IMAGE_PNG)
+                .header("Content-Security-Policy", "default-src 'none'")
+                .body(bytes);
     }
 }

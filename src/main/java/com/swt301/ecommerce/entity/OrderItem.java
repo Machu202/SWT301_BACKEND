@@ -1,4 +1,3 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/entity/OrderItem.java
 package com.swt301.ecommerce.entity;
 
 import jakarta.persistence.*;
@@ -28,11 +27,18 @@ public class OrderItem {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
+    @Column(name = "product_name_snapshot")
+    private String productNameSnapshot;
+
+    @Column(name = "product_image_snapshot")
+    private String productImageSnapshot;
+
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
     @Column(name = "unit_price", nullable = false)
-    private BigDecimal unitPrice; 
+    private BigDecimal unitPrice;
+
     @Column(name = "subtotal", nullable = false)
     private BigDecimal subtotal;
 }

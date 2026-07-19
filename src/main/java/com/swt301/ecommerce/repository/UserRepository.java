@@ -1,4 +1,3 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/repository/UserRepository.java
 package com.swt301.ecommerce.repository;
 
 import com.swt301.ecommerce.entity.User;
@@ -10,6 +9,9 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Integer> {
     Optional<User> findByUsername(String username);
-    Boolean existsByUsername(String username); // Dùng để check trùng username khi Đăng ký
-    Boolean existsByEmail(String email);
+    Optional<User> findByPhone(String phone);
+    Boolean existsByUsername(String username);
+    Boolean existsByEmailIgnoreCase(String email);
+    Boolean existsByPhone(String phone);
+    Boolean existsByPhoneAndUserIdNot(String phone, Integer userId);
 }

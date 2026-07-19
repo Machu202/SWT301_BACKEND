@@ -1,9 +1,9 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/CartResponse.java
 package com.swt301.ecommerce.dto.response;
 
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -13,7 +13,7 @@ import java.util.List;
 public class CartResponse {
     private Integer cartId;
     private List<CartItemDto> items;
-    private BigDecimal totalCartPrice; // Tổng tiền cả giỏ
+    private BigDecimal totalCartPrice;
 
     @Getter
     @Setter
@@ -24,7 +24,9 @@ public class CartResponse {
         private String productName;
         private String productImage;
         private Integer quantity;
+        private Integer productStock;
+        private Integer availableToAdd;
         private BigDecimal unitPrice;
-        private BigDecimal itemSubtotal; // Tiền của riêng món này (số lượng * giá)
+        private BigDecimal itemSubtotal;
     }
 }

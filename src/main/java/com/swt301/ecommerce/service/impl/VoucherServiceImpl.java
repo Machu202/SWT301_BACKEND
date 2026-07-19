@@ -3,6 +3,8 @@ package com.swt301.ecommerce.service.impl;
 
 import com.swt301.ecommerce.dto.response.VoucherResponse;
 import com.swt301.ecommerce.entity.Voucher;
+import com.swt301.ecommerce.exception.BusinessRuleException;
+import com.swt301.ecommerce.exception.ResourceNotFoundException;
 import com.swt301.ecommerce.repository.VoucherRepository;
 import com.swt301.ecommerce.service.VoucherService;
 import lombok.RequiredArgsConstructor;
@@ -20,22 +22,22 @@ public class VoucherServiceImpl implements VoucherService {
     @Override
     public VoucherResponse checkVoucher(String code, BigDecimal orderSubtotal) {
         Voucher voucher = voucherRepository.findByVoucherCode(code)
-                .orElseThrow(() -> new RuntimeException("Mã giảm giá không tồn tại"));
+                .orElseThrow(() -> new ResourceNotFoundException("Mã giảm giá không tồn tại"));
 
         if (!"ACTIVE".equalsIgnoreCase(voucher.getStatus())) {
-            throw new RuntimeException("Mã giảm giá không còn hoạt động");
+            throw new BusinessRuleException("Mã giảm giá không còn hoạt động");
         }
 
         if (voucher.getQuantity() != null && voucher.getQuantity() <= 0) {
-            throw new RuntimeException("Mã giảm giá đã hết lượt sử dụng");
+            throw new BusinessRuleException("Mã giảm giá đã hết lượt sử dụng");
         }
 
         if (voucher.getExpiredDate() != null && voucher.getExpiredDate().isBefore(LocalDateTime.now())) {
-            throw new RuntimeException("Mã giảm giá đã hết hạn");
+            throw new BusinessRuleException("Mã giảm giá đã hết hạn");
         }
 
         if (voucher.getMinOrder() != null && orderSubtotal.compareTo(voucher.getMinOrder()) < 0) {
-            throw new RuntimeException("Đơn hàng chưa đạt giá trị tối thiểu (" + voucher.getMinOrder() + "đ)");
+            throw new BusinessRuleException("Đơn hàng chưa đạt giá trị tối thiểu (" + voucher.getMinOrder() + "đ)");
         }
 
         return VoucherResponse.builder()

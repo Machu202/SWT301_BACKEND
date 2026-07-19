@@ -8,9 +8,9 @@ import lombok.Setter;
 @Getter
 @Setter
 public class LoginRequest {
-    @NotBlank(message = "Username không được để trống")
+    @NotBlank(message = "Fields cannot be empty")
     private String username;
 
-    @NotBlank(message = "Password không được để trống")
+    @NotBlank(message = "Fields cannot be empty")
     private String password;
 }

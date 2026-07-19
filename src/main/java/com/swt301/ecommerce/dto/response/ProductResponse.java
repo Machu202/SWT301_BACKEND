@@ -1,4 +1,3 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/dto/response/ProductResponse.java
 package com.swt301.ecommerce.dto.response;
 
 import lombok.Builder;
@@ -19,4 +18,5 @@ public class ProductResponse {
     private BigDecimal price;
     private Integer stock;
     private String image;
+    private String status;
 }

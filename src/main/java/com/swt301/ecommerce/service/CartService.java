@@ -1,4 +1,3 @@
-// Vị trí: src/main/java/com/swt301/ecommerce/service/CartService.java
 package com.swt301.ecommerce.service;
 
 import com.swt301.ecommerce.dto.request.CartItemRequest;
@@ -9,4 +8,5 @@ public interface CartService {
     CartResponse addToCart(Integer userId, CartItemRequest request);
     CartResponse updateCartItem(Integer userId, CartItemRequest request);
     CartResponse removeCartItem(Integer userId, Integer cartItemId);
+    CartResponse clearCart(Integer userId);
 }
